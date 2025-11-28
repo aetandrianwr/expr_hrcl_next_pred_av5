@@ -35,24 +35,24 @@ class Config:
     # Positional encoding
     max_seq_len = 60
     
-    # Training - history-centric model
-    batch_size = 128
-    num_epochs = 150
-    learning_rate = 0.002
-    weight_decay = 1e-4
+    # Training - optimized for 50%+ accuracy
+    batch_size = 96
+    num_epochs = 120
+    learning_rate = 0.0025
+    weight_decay = 8e-5
     grad_clip = 1.0
-    label_smoothing = 0.03
+    label_smoothing = 0.02
     
     # Scheduler
-    warmup_epochs = 5
-    scheduler_patience = 12
-    scheduler_factor = 0.5
-    min_lr = 1e-6
+    warmup_epochs = 3
+    scheduler_patience = 10
+    scheduler_factor = 0.6
+    min_lr = 5e-7
     use_cosine_annealing = False
     T_max = 50
     
     # Early stopping
-    early_stop_patience = 25
+    early_stop_patience = 20
     
     # Device
     device = "cuda" if torch.cuda.is_available() else "cpu"

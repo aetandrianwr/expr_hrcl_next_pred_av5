@@ -68,11 +68,11 @@ class HistoryCentricModel(nn.Module):
             nn.Linear(160, config.num_locations)
         )
         
-        # History scoring parameters (learnable)
-        self.recency_decay = nn.Parameter(torch.tensor(0.7))  # Exponential decay for recency
-        self.freq_weight = nn.Parameter(torch.tensor(1.5))   # Weight for frequency
-        self.history_scale = nn.Parameter(torch.tensor(8.0))  # Overall history boost
-        self.model_weight = nn.Parameter(torch.tensor(0.3))   # Weight for learned model
+        # History scoring parameters (learnable) - optimized for higher accuracy
+        self.recency_decay = nn.Parameter(torch.tensor(0.65))  # Stronger recency bias
+        self.freq_weight = nn.Parameter(torch.tensor(2.0))     # Higher frequency weight
+        self.history_scale = nn.Parameter(torch.tensor(10.0))  # Stronger history boost
+        self.model_weight = nn.Parameter(torch.tensor(0.25))   # Slightly lower learned weight
         
         self._init_weights()
     
