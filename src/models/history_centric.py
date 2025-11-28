@@ -68,11 +68,11 @@ class HistoryCentricModel(nn.Module):
             nn.Linear(160, config.num_locations)
         )
         
-        # History scoring parameters (learnable) - maximized for 50%+ accuracy
-        self.recency_decay = nn.Parameter(torch.tensor(0.60))  # Even stronger recency bias
-        self.freq_weight = nn.Parameter(torch.tensor(2.5))     # Higher frequency weight
-        self.history_scale = nn.Parameter(torch.tensor(12.0))  # Much stronger history boost
-        self.model_weight = nn.Parameter(torch.tensor(0.20))   # Even lower learned weight
+        # History scoring parameters (learnable) - MAXIMUM history bias for 50%+
+        self.recency_decay = nn.Parameter(torch.tensor(0.55))  # Maximum recency bias
+        self.freq_weight = nn.Parameter(torch.tensor(3.0))     # Maximum frequency weight
+        self.history_scale = nn.Parameter(torch.tensor(15.0))  # Maximum history boost
+        self.model_weight = nn.Parameter(torch.tensor(0.15))   # Minimal learned weight
         
         self._init_weights()
     
