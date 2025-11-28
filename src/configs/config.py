@@ -19,37 +19,40 @@ class Config:
     num_users = 46  # 45 max + 1 for padding (0)
     num_weekdays = 7
     
-    # Embedding dimensions
-    loc_emb_dim = 128
-    user_emb_dim = 32
-    weekday_emb_dim = 16
-    time_emb_dim = 32
+    # Embedding dimensions - reduced for parameter efficiency
+    loc_emb_dim = 96
+    user_emb_dim = 24
+    weekday_emb_dim = 8
+    time_emb_dim = 16
     
-    # Transformer parameters
-    d_model = 256  # Total embedding dimension
-    nhead = 8
-    num_layers = 4
-    dim_feedforward = 512
-    dropout = 0.15
+    # Transformer parameters - optimized for < 500K params
+    d_model = 192  # Total embedding dimension
+    nhead = 6
+    num_layers = 3
+    dim_feedforward = 384
+    dropout = 0.2
     
     # Positional encoding
     max_seq_len = 60
     
-    # Training
-    batch_size = 128
-    num_epochs = 150
-    learning_rate = 0.0005
-    weight_decay = 1e-4
+    # Training - optimized for better convergence
+    batch_size = 64
+    num_epochs = 200
+    learning_rate = 0.001
+    weight_decay = 5e-5
     grad_clip = 1.0
+    label_smoothing = 0.05
     
     # Scheduler
-    warmup_epochs = 5
-    scheduler_patience = 10
-    scheduler_factor = 0.5
+    warmup_epochs = 10
+    scheduler_patience = 15
+    scheduler_factor = 0.6
     min_lr = 1e-6
+    use_cosine_annealing = True
+    T_max = 50
     
     # Early stopping
-    early_stop_patience = 25
+    early_stop_patience = 35
     
     # Device
     device = "cuda" if torch.cuda.is_available() else "cpu"

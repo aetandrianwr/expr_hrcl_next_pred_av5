@@ -1,34 +1,30 @@
 """
-Training utilities and trainer class.
+Training utilities and trainer class with enhanced optimization.
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlateau
 import numpy as np
 import os
 import time
 from pathlib import Path
 
-from ..evaluation.metrics import calculate_correct_total_prediction, get_performance_dict
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from evaluation.metrics import calculate_correct_total_prediction, get_performance_dict
 
 
 class LabelSmoothingCrossEntropy(nn.Module):
-    """
-    Label smoothing for better generalization.
-    """
+    """Label smoothing for better generalization."""
     def __init__(self, smoothing=0.1):
         super().__init__()
         self.smoothing = smoothing
     
     def forward(self, pred, target):
-        """
-        Args:
-            pred: (B, C) logits
-            target: (B,) class indices
-        """
         n_class = pred.size(1)
         one_hot = torch.zeros_like(pred).scatter(1, target.unsqueeze(1), 1)
         one_hot = one_hot * (1 - self.smoothing) + self.smoothing / n_class
@@ -37,10 +33,25 @@ class LabelSmoothingCrossEntropy(nn.Module):
         return loss
 
 
-class Trainer:
+class FocalLoss(nn.Module):
     """
-    Trainer for next-location prediction model.
+    Focal loss to handle class imbalance.
+    Focuses on hard examples.
     """
+    def __init__(self, alpha=0.25, gamma=2.0):
+        super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+    
+    def forward(self, pred, target):
+        ce_loss = F.cross_entropy(pred, target, reduction='none')
+        p_t = torch.exp(-ce_loss)
+        focal_loss = self.alpha * (1 - p_t) ** self.gamma * ce_loss
+        return focal_loss.mean()
+
+
+class TrainerV2:
+    """Enhanced trainer with better optimization."""
     
     def __init__(self, model, train_loader, val_loader, config):
         self.model = model
@@ -49,28 +60,39 @@ class Trainer:
         self.config = config
         self.device = config.device
         
-        # Move model to device
         self.model.to(self.device)
         
-        # Optimizer
-        self.optimizer = AdamW(
-            model.parameters(),
-            lr=config.learning_rate,
-            weight_decay=config.weight_decay
-        )
+        # Optimizer with weight decay only on non-bias/non-norm parameters
+        param_groups = [
+            {'params': [p for n, p in model.named_parameters() if 'bias' not in n and 'norm' not in n], 
+             'weight_decay': config.weight_decay},
+            {'params': [p for n, p in model.named_parameters() if 'bias' in n or 'norm' in n], 
+             'weight_decay': 0.0}
+        ]
+        self.optimizer = AdamW(param_groups, lr=config.learning_rate)
         
-        # Loss function with label smoothing
-        self.criterion = LabelSmoothingCrossEntropy(smoothing=0.1)
+        # Loss with label smoothing
+        self.criterion = LabelSmoothingCrossEntropy(smoothing=getattr(config, 'label_smoothing', 0.05))
         
         # Learning rate scheduler
-        self.scheduler = ReduceLROnPlateau(
-            self.optimizer,
-            mode='max',
-            factor=config.scheduler_factor,
-            patience=config.scheduler_patience,
-            verbose=True,
-            min_lr=config.min_lr
-        )
+        if getattr(config, 'use_cosine_annealing', False):
+            self.scheduler = CosineAnnealingWarmRestarts(
+                self.optimizer,
+                T_0=config.T_max,
+                T_mult=1,
+                eta_min=config.min_lr
+            )
+            self.use_cosine = True
+        else:
+            self.scheduler = ReduceLROnPlateau(
+                self.optimizer,
+                mode='max',
+                factor=config.scheduler_factor,
+                patience=config.scheduler_patience,
+                verbose=True,
+                min_lr=config.min_lr
+            )
+            self.use_cosine = False
         
         # Training state
         self.best_val_acc = 0.0
@@ -198,7 +220,10 @@ class Trainer:
             self.val_accs.append(val_acc)
             
             # Learning rate scheduling
-            self.scheduler.step(val_acc)
+            if self.use_cosine:
+                self.scheduler.step(epoch - 1 + batch_idx / len(self.train_loader))
+            else:
+                self.scheduler.step(val_acc)
             
             # Check for improvement
             if val_acc > self.best_val_acc:

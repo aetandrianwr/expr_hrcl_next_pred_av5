@@ -14,8 +14,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from configs.config import Config
 from data.dataset import get_dataloader
-from models.transformer_model import NextLocationPredictor
-from training.trainer import Trainer
+from models.efficient_transformer import NextLocationPredictorV2
+from training.trainer import TrainerV2
 
 
 def set_seed(seed):
@@ -80,16 +80,19 @@ def main():
     
     # Create model
     print("Creating model...")
-    model = NextLocationPredictor(config)
+    model = NextLocationPredictorV2(config)
     num_params = model.count_parameters()
     print(f"Model parameters: {num_params:,}")
     
     if num_params >= 500000:
         print(f"WARNING: Model has {num_params:,} parameters (limit is 500K)")
+        print(f"Exceeded by: {num_params - 500000:,}")
+    else:
+        print(f"✓ Model is within budget (remaining: {500000 - num_params:,})")
     print()
     
     # Create trainer
-    trainer = Trainer(model, train_loader, val_loader, config)
+    trainer = TrainerV2(model, train_loader, val_loader, config)
     
     # Train
     best_val_acc = trainer.train()
