@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from configs.config import Config
 from data.dataset import get_dataloader
-from models.hybrid_model import HybridLocationPredictor
+from models.final_model import FinalCompactModel
 from training.trainer import TrainerV2
 
 
@@ -80,7 +80,7 @@ def main():
     
     # Create model
     print("Creating model...")
-    model = HybridLocationPredictor(config)
+    model = FinalCompactModel(config)
     num_params = model.count_parameters()
     print(f"Model parameters: {num_params:,}")
     

@@ -35,24 +35,24 @@ class Config:
     # Positional encoding
     max_seq_len = 60
     
-    # Training - optimized with stronger regularization
-    batch_size = 64
-    num_epochs = 200
-    learning_rate = 0.0008
-    weight_decay = 1e-4
+    # Training - final optimized settings
+    batch_size = 96  # Larger batch for stability
+    num_epochs = 250
+    learning_rate = 0.0012
+    weight_decay = 2e-4
     grad_clip = 0.5
-    label_smoothing = 0.08
+    label_smoothing = 0.06
     
     # Scheduler
-    warmup_epochs = 10
-    scheduler_patience = 15
-    scheduler_factor = 0.6
-    min_lr = 1e-6
-    use_cosine_annealing = True
+    warmup_epochs = 8
+    scheduler_patience = 20
+    scheduler_factor = 0.5
+    min_lr = 5e-7
+    use_cosine_annealing = False  # Use plateau scheduler
     T_max = 50
     
     # Early stopping
-    early_stop_patience = 35
+    early_stop_patience = 45
     
     # Device
     device = "cuda" if torch.cuda.is_available() else "cpu"
