@@ -221,7 +221,7 @@ class TrainerV2:
             
             # Learning rate scheduling
             if self.use_cosine:
-                self.scheduler.step(epoch - 1 + batch_idx / len(self.train_loader))
+                self.scheduler.step()
             else:
                 self.scheduler.step(val_acc)
             

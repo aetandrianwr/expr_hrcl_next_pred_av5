@@ -19,29 +19,29 @@ class Config:
     num_users = 46  # 45 max + 1 for padding (0)
     num_weekdays = 7
     
-    # Embedding dimensions - reduced for parameter efficiency
-    loc_emb_dim = 96
-    user_emb_dim = 24
-    weekday_emb_dim = 8
-    time_emb_dim = 16
+    # Embedding dimensions - optimized for hybrid model
+    loc_emb_dim = 64
+    user_emb_dim = 16
+    weekday_emb_dim = 4
+    time_emb_dim = 8
     
-    # Transformer parameters - optimized for < 500K params
-    d_model = 192  # Total embedding dimension
-    nhead = 6
-    num_layers = 3
-    dim_feedforward = 384
-    dropout = 0.2
+    # Transformer parameters - lightweight for hybrid approach
+    d_model = 128
+    nhead = 4
+    num_layers = 2
+    dim_feedforward = 256
+    dropout = 0.3  # Stronger dropout for hybrid model
     
     # Positional encoding
     max_seq_len = 60
     
-    # Training - optimized for better convergence
+    # Training - optimized with stronger regularization
     batch_size = 64
     num_epochs = 200
-    learning_rate = 0.001
-    weight_decay = 5e-5
-    grad_clip = 1.0
-    label_smoothing = 0.05
+    learning_rate = 0.0008
+    weight_decay = 1e-4
+    grad_clip = 0.5
+    label_smoothing = 0.08
     
     # Scheduler
     warmup_epochs = 10
