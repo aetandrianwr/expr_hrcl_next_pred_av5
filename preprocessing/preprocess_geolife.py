@@ -181,15 +181,8 @@ def _filter_sp_history(sp, config):
     train_data, vali_data, test_data = split_dataset(sp)
     print(f"Train: {len(train_data)}, Val: {len(vali_data)}, Test: {len(test_data)}")
     
-    # Encode unseen locations in validation and test into -1, then add 2
-    print("\nEncoding location IDs...")
-    enc = OrdinalEncoder(dtype=np.int64, handle_unknown="use_encoded_value", unknown_value=-1).fit(
-        train_data["location_id"].values.reshape(-1, 1)
-    )
-    # add 2 to account for unseen locations and to account for 0 padding
-    train_data["location_id"] = enc.transform(train_data["location_id"].values.reshape(-1, 1)) + 2
-    vali_data["location_id"] = enc.transform(vali_data["location_id"].values.reshape(-1, 1)) + 2
-    test_data["location_id"] = enc.transform(test_data["location_id"].values.reshape(-1, 1)) + 2
+    # NOTE: Do NOT encode location_id here - that happens in the dataloader!
+    # This matches the baseline behavior where location encoding is deferred
     
     # Get valid sequences for each previous_day
     previous_day_ls = seq_params['previous_days']
@@ -210,29 +203,18 @@ def _filter_sp_history(sp, config):
     print(f"Final valid IDs: {len(final_valid_id)}")
     
     # Filter the user again based on final_valid_id
-    valid_users_train = train_data.loc[train_data["id"].isin(final_valid_id), "user_id"].unique()
-    valid_users_vali = vali_data.loc[vali_data["id"].isin(final_valid_id), "user_id"].unique()
-    valid_users_test = test_data.loc[test_data["id"].isin(final_valid_id), "user_id"].unique()
-    
-    valid_users = set.intersection(set(valid_users_train), set(valid_users_vali), set(valid_users_test))
-    print(f"Valid users across all splits: {len(valid_users)}")
-    
+    valid_users = sp.loc[sp["id"].isin(final_valid_id), "user_id"].unique()
     filtered_sp = sp.loc[sp["user_id"].isin(valid_users)].copy()
     
-    # Re-split after user filtering
-    train_data, vali_data, test_data = split_dataset(filtered_sp)
+    print(f"Valid users across all splits: {len(valid_users)}")
+    print(f"Filtered staypoints: {len(filtered_sp)}")
+    print(f"Unique locations in filtered data: {filtered_sp['location_id'].nunique()}")
+    print(f"Location ID range: {filtered_sp['location_id'].min()} to {filtered_sp['location_id'].max()}")
     
-    # Encode unseen locations in validation and test into -1, then add 2
-    enc = OrdinalEncoder(dtype=np.int64, handle_unknown="use_encoded_value", unknown_value=-1).fit(
-        train_data["location_id"].values.reshape(-1, 1)
-    )
-    # add 2 to account for unseen locations and to account for 0 padding
-    train_data["location_id"] = enc.transform(train_data["location_id"].values.reshape(-1, 1)) + 2
-    print(f"Max location id: {train_data.location_id.max()}, unique location id: {train_data.location_id.unique().shape[0]}")
-    
-    # Re-encode the users to ensure the user_id is continuous
+    # Re-encode the users to ensure the user_id is continuous (this IS done in preprocessing)
     enc = OrdinalEncoder(dtype=np.int64)
     filtered_sp["user_id"] = enc.fit_transform(filtered_sp["user_id"].values.reshape(-1, 1)) + 1
+    print(f"User ID range after encoding: 1 to {filtered_sp['user_id'].max()}")
     
     # Save the valid_ids and dataset
     valid_ids_path = os.path.join(output_dir, "valid_ids_geolife.pk")

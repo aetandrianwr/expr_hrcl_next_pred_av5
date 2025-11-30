@@ -7,8 +7,8 @@ data:
   data_dir: data/geolife
   dataset_name: geolife
   max_seq_len: 60
-  num_locations: 964
-  num_users: 48
+  num_locations: 1187
+  num_users: 46
   num_weekdays: 7
   test_file: geolife_transformer_7_test.pk
   train_file: geolife_transformer_7_train.pk

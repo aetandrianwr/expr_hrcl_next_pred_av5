@@ -17,8 +17,8 @@ data:
   test_file: "geolife_transformer_7_test.pk"
   
   # Dataset statistics
-  num_locations: 964  # 963 max + 1 for padding (0)
-  num_users: 48  # 47 max + 1 for padding (0)
+  num_locations: 1187  # 1186 max + 1 for padding (0)
+  num_users: 46  # 45 max + 1 for padding (0)
   num_weekdays: 7
   max_seq_len: 60
 
