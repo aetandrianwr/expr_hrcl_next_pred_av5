@@ -10,6 +10,7 @@ from torch.optim.lr_scheduler import CosineAnnealingWarmRestarts, ReduceLROnPlat
 import numpy as np
 import time
 from pathlib import Path
+from tqdm import tqdm
 
 import sys
 import os
@@ -93,7 +94,7 @@ class ProductionTrainer:
             min_lr = self.config.get('training.scheduler.min_lr')
             self.scheduler = ReduceLROnPlateau(
                 self.optimizer,
-                mode='max',
+                mode='min',  # Monitor loss (lower is better)
                 factor=factor,
                 patience=patience,
                 verbose=True,
@@ -101,12 +102,12 @@ class ProductionTrainer:
             )
             self.use_cosine = False
         
-        # Training state
-        self.best_val_acc = 0.0
+        # Training state - use validation loss instead of accuracy
+        self.best_val_loss = float('inf')
         self.best_epoch = 0
         self.epochs_without_improvement = 0
         self.train_losses = []
-        self.val_accs = []
+        self.val_losses = []
         self.start_time = None
     
     def _log(self, message):
@@ -117,15 +118,17 @@ class ProductionTrainer:
             print(message)
     
     def train_epoch(self, epoch):
-        """Train for one epoch."""
+        """Train for one epoch with progress bar."""
         self.model.train()
         total_loss = 0
         num_batches = 0
         
-        log_interval = self.config.get('logging.log_interval')
         grad_clip = self.config.get('training.grad_clip')
         
-        for batch_idx, batch in enumerate(self.train_loader):
+        # Progress bar for training
+        pbar = tqdm(self.train_loader, desc=f'Epoch {epoch} [Train]', leave=False, ncols=100)
+        
+        for batch in pbar:
             # Move to device
             loc_seq = batch['loc_seq'].to(self.device)
             user_seq = batch['user_seq'].to(self.device)
@@ -154,10 +157,8 @@ class ProductionTrainer:
             total_loss += loss.item()
             num_batches += 1
             
-            # Log progress
-            if (batch_idx + 1) % log_interval == 0:
-                avg_loss = total_loss / num_batches
-                self._log(f'Epoch {epoch} [{batch_idx+1}/{len(self.train_loader)}] Loss: {avg_loss:.4f}')
+            # Update progress bar
+            pbar.set_postfix({'loss': f'{total_loss/num_batches:.4f}'})
         
         avg_loss = total_loss / num_batches
         self.train_losses.append(avg_loss)
@@ -165,7 +166,7 @@ class ProductionTrainer:
     
     @torch.no_grad()
     def validate(self, data_loader, split_name='Val'):
-        """Validate the model."""
+        """Validate the model with progress bar."""
         self.model.eval()
         
         # Initialize metric accumulators
@@ -184,7 +185,14 @@ class ProductionTrainer:
         true_ls = []
         top1_ls = []
         
-        for batch in data_loader:
+        # For loss calculation
+        total_val_loss = 0
+        num_batches = 0
+        
+        # Progress bar for validation
+        pbar = tqdm(data_loader, desc=f'{split_name:5s}', leave=False, ncols=100)
+        
+        for batch in pbar:
             # Move to device
             loc_seq = batch['loc_seq'].to(self.device)
             user_seq = batch['user_seq'].to(self.device)
@@ -197,6 +205,11 @@ class ProductionTrainer:
             
             # Forward pass
             logits = self.model(loc_seq, user_seq, weekday_seq, start_min_seq, dur_seq, diff_seq, mask)
+            
+            # Calculate loss
+            loss = self.criterion(logits, target)
+            total_val_loss += loss.item()
+            num_batches += 1
             
             # Calculate metrics
             result, batch_true, batch_top1 = calculate_correct_total_prediction(logits, target)
@@ -215,6 +228,12 @@ class ProductionTrainer:
                 top1_ls.extend([batch_top1.tolist()])
             else:
                 top1_ls.extend(batch_top1.tolist())
+            
+            # Update progress bar
+            pbar.set_postfix({'loss': f'{total_val_loss/num_batches:.4f}'})
+        
+        # Calculate average loss
+        avg_val_loss = total_val_loss / num_batches
         
         # Calculate F1 score
         f1 = f1_score(true_ls, top1_ls, average="weighted")
@@ -222,24 +241,21 @@ class ProductionTrainer:
         
         # Calculate percentages
         perf = get_performance_dict(metrics)
+        perf['val_loss'] = avg_val_loss
         
-        self._log(f'\n{split_name} Performance:')
-        self._log(f'  Acc@1:  {perf["acc@1"]:.2f}%')
-        self._log(f'  Acc@5:  {perf["acc@5"]:.2f}%')
-        self._log(f'  Acc@10: {perf["acc@10"]:.2f}%')
-        self._log(f'  F1:     {100 * f1:.2f}%')
-        self._log(f'  MRR:    {perf["mrr"]:.2f}%')
-        self._log(f'  NDCG:   {perf["ndcg"]:.2f}%\n')
+        # Condensed performance display on single line
+        self._log(f'{split_name} - Loss: {avg_val_loss:.4f} | Acc@1: {perf["acc@1"]:.2f}% Acc@5: {perf["acc@5"]:.2f}% Acc@10: {perf["acc@10"]:.2f}% | F1: {100*f1:.2f}% MRR: {perf["mrr"]:.2f}% NDCG: {perf["ndcg"]:.2f}%')
         
         return perf
     
     def train(self):
-        """Main training loop."""
+        """Main training loop using validation loss for model selection."""
         num_epochs = self.config.get('training.num_epochs')
         early_stop_patience = self.config.get('training.early_stopping.patience')
         
         self._log(f'\nStarting training on {self.device}')
-        self._log(f'Model parameters: {self.model.count_parameters():,}\n')
+        self._log(f'Model parameters: {self.model.count_parameters():,}')
+        self._log(f'Using validation loss for model selection\n')
         
         self.start_time = time.time()
         
@@ -252,18 +268,18 @@ class ProductionTrainer:
             
             # Validate
             val_perf = self.validate(self.val_loader, split_name='Val')
-            val_acc = val_perf['acc@1']
-            self.val_accs.append(val_acc)
+            val_loss = val_perf['val_loss']
+            self.val_losses.append(val_loss)
             
-            # Learning rate scheduling
+            # Learning rate scheduling (use loss for ReduceLROnPlateau)
             if self.use_cosine:
                 self.scheduler.step()
             else:
-                self.scheduler.step(val_acc)
+                self.scheduler.step(val_loss)
             
-            # Check for improvement
-            if val_acc > self.best_val_acc:
-                self.best_val_acc = val_acc
+            # Check for improvement (lower loss is better)
+            if val_loss < self.best_val_loss:
+                self.best_val_loss = val_loss
                 self.best_epoch = epoch
                 self.epochs_without_improvement = 0
                 
@@ -273,16 +289,16 @@ class ProductionTrainer:
                     'epoch': epoch,
                     'model_state_dict': self.model.state_dict(),
                     'optimizer_state_dict': self.optimizer.state_dict(),
-                    'val_acc': val_acc,
+                    'val_loss': val_loss,
+                    'val_acc': val_perf['acc@1'],
                     'config': self.config.to_dict()
                 }, save_path)
-                self._log(f'✓ New best model saved! Val Acc@1: {val_acc:.2f}%')
+                self._log(f'✓ New best model saved! Val Loss: {val_loss:.4f} (Acc@1: {val_perf["acc@1"]:.2f}%)')
             else:
                 self.epochs_without_improvement += 1
             
             epoch_time = time.time() - epoch_start
-            self._log(f'Epoch time: {epoch_time:.2f}s')
-            self._log(f'Best Val Acc@1: {self.best_val_acc:.2f}% (epoch {self.best_epoch})')
+            self._log(f'Train Loss: {train_loss:.4f} | Val Loss: {val_loss:.4f} (best: {self.best_val_loss:.4f} @ epoch {self.best_epoch}) | Time: {epoch_time:.1f}s')
             self._log(f'Epochs without improvement: {self.epochs_without_improvement}/{early_stop_patience}\n')
             
             # Early stopping
@@ -293,11 +309,11 @@ class ProductionTrainer:
         total_time = time.time() - self.start_time
         
         self._log(f'\nTraining completed!')
-        self._log(f'Best validation Acc@1: {self.best_val_acc:.2f}% at epoch {self.best_epoch}')
+        self._log(f'Best validation loss: {self.best_val_loss:.4f} at epoch {self.best_epoch}')
         self._log(f'Total training time: {total_time:.2f}s')
         
         return {
-            'best_val_acc': self.best_val_acc,
+            'best_val_loss': self.best_val_loss,
             'best_epoch': self.best_epoch,
             'total_epochs': epoch,
             'training_time': total_time
@@ -309,6 +325,11 @@ class ProductionTrainer:
         if save_path.exists():
             checkpoint = torch.load(save_path, map_location=self.device)
             self.model.load_state_dict(checkpoint['model_state_dict'])
-            self._log(f'Loaded best model from epoch {checkpoint["epoch"]} with val acc {checkpoint["val_acc"]:.2f}%')
+            val_loss = checkpoint.get('val_loss', 'N/A')
+            val_acc = checkpoint.get('val_acc', 'N/A')
+            if isinstance(val_loss, float):
+                self._log(f'Loaded best model from epoch {checkpoint["epoch"]} (Val Loss: {val_loss:.4f}, Acc@1: {val_acc:.2f}%)')
+            else:
+                self._log(f'Loaded best model from epoch {checkpoint["epoch"]}')
             return True
         return False

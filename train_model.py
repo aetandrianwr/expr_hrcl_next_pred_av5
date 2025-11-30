@@ -159,8 +159,8 @@ def main():
     
     # Get validation performance at best epoch
     val_perf = {
-        'acc@1': trainer.best_val_acc,
-        'acc@3': 0,  # Not tracked during training
+        'acc@1': 0,  # Will be filled from test_perf if needed
+        'acc@3': 0,
         'acc@5': 0,
         'acc@10': 0,
         'f1': 0,
@@ -172,7 +172,7 @@ def main():
     logger.info("\n" + "=" * 80)
     logger.info("FINAL RESULTS")
     logger.info("=" * 80)
-    logger.info(f"Best Validation Acc@1: {trainer.best_val_acc:.2f}% (Epoch {trainer.best_epoch})")
+    logger.info(f"Best Validation Loss: {trainer.best_val_loss:.4f} (Epoch {trainer.best_epoch})")
     logger.info(f"Test Acc@1: {test_perf['acc@1']:.2f}%")
     logger.info(f"Test Acc@5: {test_perf['acc@5']:.2f}%")
     logger.info(f"Test Acc@10: {test_perf['acc@10']:.2f}%")

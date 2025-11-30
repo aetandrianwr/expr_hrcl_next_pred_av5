@@ -65,8 +65,8 @@ training:
   # Early stopping
   early_stopping:
     patience: 20
-    metric: "acc@1"
-    mode: "max"
+    metric: "val_loss"
+    mode: "min"
 
 # Evaluation configuration
 evaluation:
@@ -93,8 +93,8 @@ logging:
 checkpoint:
   save_best: true
   save_last: true
-  monitor: "val_acc@1"
-  mode: "max"
+  monitor: "val_loss"
+  mode: "min"
 
 # Output paths (relative to project root)
 paths:
