@@ -28,7 +28,7 @@ user_quality:
   mean_thres: null  # mean quality threshold (null for geolife)
 
 locations:
-  epsilon: 50  # meters for DBSCAN clustering
+  epsilon: 20  # meters for DBSCAN clustering (CRITICAL: must be 20 for baseline match)
   num_samples: 2  # minimum samples for DBSCAN
   distance_metric: "haversine"
   agg_level: "dataset"
