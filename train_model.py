@@ -1,0 +1,209 @@
+"""
+Production-level training script with YAML configuration.
+Supports multiple datasets and automatic result tracking.
+
+Usage:
+    python train_model.py --config configs/geolife_default.yaml
+    python train_model.py --config configs/custom.yaml --seed 123
+"""
+
+import os
+import sys
+import argparse
+import torch
+import random
+import numpy as np
+from pathlib import Path
+import time
+
+# Add src to path
+src_path = os.path.join(os.path.dirname(__file__), 'src')
+sys.path.insert(0, src_path)
+
+from utils.config_manager import ConfigManager
+from utils.results_tracker import ResultsTracker
+from utils.logger import ExperimentLogger
+from data.dataset import get_dataloader
+from models.history_centric import HistoryCentricModel
+from training.trainer_v3 import ProductionTrainer
+
+
+def set_seed(seed):
+    """Set random seeds for reproducibility."""
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def main():
+    # Parse arguments
+    parser = argparse.ArgumentParser(description='Train next-location prediction model')
+    parser.add_argument('--config', type=str, default='configs/geolife_default.yaml',
+                       help='Path to YAML configuration file')
+    parser.add_argument('--seed', type=int, default=None,
+                       help='Random seed (overrides config)')
+    args = parser.parse_args()
+    
+    # Load configuration
+    overrides = {}
+    if args.seed is not None:
+        overrides['system.seed'] = args.seed
+    
+    config = ConfigManager(args.config, overrides)
+    
+    # Display configuration
+    config.display()
+    
+    # Set random seed
+    seed = config.get('system.seed')
+    set_seed(seed)
+    
+    # Initialize logger
+    logger = ExperimentLogger(config.log_dir, name=config.get('experiment.name'))
+    logger.info("=" * 80)
+    logger.info("EXPERIMENT STARTED")
+    logger.info("=" * 80)
+    logger.info(f"Configuration file: {args.config}")
+    logger.info(f"Run directory: {config.run_dir}")
+    logger.info(f"Device: {config.device}")
+    logger.info(f"Random seed: {seed}")
+    
+    # Load data
+    logger.info("\nLoading data...")
+    data_dir = config.get('data.data_dir')
+    train_file = config.get('data.train_file')
+    val_file = config.get('data.val_file')
+    test_file = config.get('data.test_file')
+    batch_size = config.get('training.batch_size')
+    max_seq_len = config.get('data.max_seq_len')
+    num_workers = config.get('system.num_workers')
+    
+    train_loader = get_dataloader(
+        os.path.join(data_dir, train_file),
+        batch_size=batch_size,
+        shuffle=True,
+        num_workers=num_workers,
+        max_seq_len=max_seq_len
+    )
+    val_loader = get_dataloader(
+        os.path.join(data_dir, val_file),
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        max_seq_len=max_seq_len
+    )
+    test_loader = get_dataloader(
+        os.path.join(data_dir, test_file),
+        batch_size=batch_size,
+        shuffle=False,
+        num_workers=num_workers,
+        max_seq_len=max_seq_len
+    )
+    
+    logger.info(f"Train batches: {len(train_loader)}")
+    logger.info(f"Val batches: {len(val_loader)}")
+    logger.info(f"Test batches: {len(test_loader)}")
+    
+    # Create model
+    logger.info("\nCreating model...")
+    
+    # Build config object for model (backward compatibility)
+    class ModelConfig:
+        def __init__(self, config_dict):
+            self.num_locations = config_dict.get('data.num_locations')
+            self.num_users = config_dict.get('data.num_users')
+            self.num_weekdays = config_dict.get('data.num_weekdays')
+            self.loc_emb_dim = config_dict.get('model.loc_emb_dim')
+            self.user_emb_dim = config_dict.get('model.user_emb_dim')
+            self.weekday_emb_dim = config_dict.get('model.weekday_emb_dim')
+            self.time_emb_dim = config_dict.get('model.time_emb_dim')
+            self.d_model = config_dict.get('model.d_model')
+            self.nhead = config_dict.get('model.nhead')
+            self.num_layers = config_dict.get('model.num_layers')
+            self.dim_feedforward = config_dict.get('model.dim_feedforward')
+            self.dropout = config_dict.get('model.dropout')
+            self.max_seq_len = config_dict.get('data.max_seq_len')
+    
+    model_config = ModelConfig(config)
+    model = HistoryCentricModel(model_config)
+    num_params = model.count_parameters()
+    
+    logger.info(f"Model: {config.get('model.name')}")
+    logger.info(f"Total parameters: {num_params:,}")
+    
+    if num_params >= 500000:
+        logger.warning(f"WARNING: Model has {num_params:,} parameters (limit is 500K)")
+        logger.warning(f"Exceeded by: {num_params - 500000:,}")
+    else:
+        logger.info(f"✓ Model is within budget (remaining: {500000 - num_params:,})")
+    
+    # Create trainer
+    logger.info("\nInitializing trainer...")
+    trainer = ProductionTrainer(model, train_loader, val_loader, config, logger)
+    
+    # Train
+    logger.info("\n" + "=" * 80)
+    logger.info("TRAINING")
+    logger.info("=" * 80)
+    training_info = trainer.train()
+    
+    # Load best model and evaluate on test set
+    logger.info("\n" + "=" * 80)
+    logger.info("EVALUATION ON TEST SET")
+    logger.info("=" * 80)
+    trainer.load_best_model()
+    test_perf = trainer.validate(test_loader, split_name='Test')
+    
+    # Get validation performance at best epoch
+    val_perf = {
+        'acc@1': trainer.best_val_acc,
+        'acc@3': 0,  # Not tracked during training
+        'acc@5': 0,
+        'acc@10': 0,
+        'f1': 0,
+        'mrr': 0,
+        'ndcg': 0,
+    }
+    
+    # Display final results
+    logger.info("\n" + "=" * 80)
+    logger.info("FINAL RESULTS")
+    logger.info("=" * 80)
+    logger.info(f"Best Validation Acc@1: {trainer.best_val_acc:.2f}% (Epoch {trainer.best_epoch})")
+    logger.info(f"Test Acc@1: {test_perf['acc@1']:.2f}%")
+    logger.info(f"Test Acc@5: {test_perf['acc@5']:.2f}%")
+    logger.info(f"Test Acc@10: {test_perf['acc@10']:.2f}%")
+    logger.info(f"Test F1: {100 * test_perf['f1']:.2f}%")
+    logger.info(f"Test MRR: {test_perf['mrr']:.2f}%")
+    logger.info(f"Test NDCG: {test_perf['ndcg']:.2f}%")
+    logger.info(f"Training time: {training_info['training_time']:.2f}s")
+    logger.info("=" * 80)
+    
+    # Log results to CSV
+    logger.info("\nLogging results to benchmark CSV...")
+    tracker = ResultsTracker()
+    tracker.log_result(
+        config=config.to_dict(),
+        val_metrics=val_perf,
+        test_metrics=test_perf,
+        training_info={
+            'run_dir': str(config.run_dir),
+            'total_params': num_params,
+            'epochs_trained': training_info['total_epochs'],
+            'best_epoch': training_info['best_epoch'],
+            'training_time': training_info['training_time'],
+        }
+    )
+    
+    logger.info(f"\n✓ Experiment completed successfully!")
+    logger.info(f"Run directory: {config.run_dir}")
+    logger.info(f"Log file: {logger.log_file}")
+    
+    return test_perf
+
+
+if __name__ == "__main__":
+    main()

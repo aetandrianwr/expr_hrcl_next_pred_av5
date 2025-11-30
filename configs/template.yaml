@@ -1,0 +1,105 @@
+# Template configuration for custom datasets
+# Copy this file and modify for your dataset
+
+# Experiment metadata
+experiment:
+  name: "custom_dataset_experiment"
+  description: "Description of your experiment"
+  dataset: "custom"
+  version: "1.0"
+
+# Dataset configuration
+data:
+  dataset_name: "custom"
+  data_dir: "data/custom"
+  train_file: "train.pk"
+  val_file: "val.pk"
+  test_file: "test.pk"
+  
+  # Dataset statistics (UPDATE THESE)
+  num_locations: 1000  # Total number of locations
+  num_users: 50  # Total number of users
+  num_weekdays: 7
+  max_seq_len: 60
+
+# Model architecture
+model:
+  name: "HistoryCentricModel"
+  
+  # Embedding dimensions
+  loc_emb_dim: 64
+  user_emb_dim: 16
+  weekday_emb_dim: 4
+  time_emb_dim: 8
+  
+  # Transformer parameters
+  d_model: 128
+  nhead: 4
+  num_layers: 2
+  dim_feedforward: 256
+  dropout: 0.3
+
+# Training configuration
+training:
+  batch_size: 96
+  num_epochs: 120
+  learning_rate: 0.0025
+  weight_decay: 0.00008
+  grad_clip: 1.0
+  label_smoothing: 0.02
+  
+  # Optimizer
+  optimizer: "adamw"
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  
+  # Learning rate scheduler
+  scheduler:
+    type: "reduce_on_plateau"
+    patience: 10
+    factor: 0.6
+    min_lr: 5.0e-7
+    warmup_epochs: 3
+    T_max: 50
+  
+  # Early stopping
+  early_stopping:
+    patience: 20
+    metric: "acc@1"
+    mode: "max"
+
+# Evaluation configuration
+evaluation:
+  metrics: ["acc@1", "acc@3", "acc@5", "acc@10", "mrr", "ndcg", "f1"]
+  save_predictions: false
+  
+# System configuration
+system:
+  device: "auto"
+  num_workers: 2
+  pin_memory: true
+  seed: 42
+  deterministic: true
+  
+# Logging and checkpointing
+logging:
+  log_interval: 50
+  verbose: true
+  wandb:
+    enabled: false
+    project: "next-location-prediction"
+    entity: null
+  
+checkpoint:
+  save_best: true
+  save_last: true
+  monitor: "val_acc@1"
+  mode: "max"
+
+# Output paths
+paths:
+  runs_dir: "runs"
+  results_dir: "results"
+  checkpoints_dir: "results/checkpoints"
+  logs_dir: "results/logs"
+  predictions_dir: "results/predictions"
