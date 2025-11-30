@@ -1,0 +1,49 @@
+# DIY Dataset Preprocessing Configuration
+# Dataset from Daerah Istimewa Yogyakarta, Indonesia
+
+dataset:
+  name: "diy"
+  raw_data_path: "data/diy/raw/raw_diy_mobility_dataset.csv"
+  output_dir: "data/diy"
+  timezone: "Asia/Jakarta"
+
+staypoints:
+  method: "sliding"
+  distance_metric: "haversine"
+  dist_threshold: 100  # meters
+  time_threshold: 30  # minutes
+  gap_threshold: 1440  # 24*60 minutes
+  include_last: true
+  print_progress: true
+  n_jobs: -1
+
+activity_flag:
+  method: "time_threshold"
+  time_threshold: 25  # minutes
+
+user_quality:
+  day_filter: 60  # minimum days of tracking
+  window_size: 10  # weeks for sliding window quality check
+  min_thres: 0.6  # minimum quality threshold
+  mean_thres: 0.7  # mean quality threshold
+
+locations:
+  epsilon: 50  # meters for DBSCAN clustering
+  num_samples: 2  # minimum samples for DBSCAN
+  distance_metric: "haversine"
+  agg_level: "dataset"
+  n_jobs: -1
+
+staypoint_merging:
+  max_time_gap: "1min"
+
+sequence_generation:
+  previous_days: [7]  # days of history to consider
+  min_sequence_length: 3  # minimum history records required
+
+dataset_split:
+  train_ratio: 0.6
+  val_ratio: 0.2
+  test_ratio: 0.2
+
+seed: 42

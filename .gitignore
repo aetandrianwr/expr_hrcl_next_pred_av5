@@ -35,3 +35,8 @@ env/
 # Temporary
 *.tmp
 *.bak
+
+# Raw data
+data/*/raw/
+data/geolife/original_backup/
+data/geolife/new_preprocessing/
