@@ -16,6 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from evaluation.metrics import calculate_correct_total_prediction, get_performance_dict
+from sklearn.metrics import f1_score
 
 
 class LabelSmoothingCrossEntropy(nn.Module):
@@ -165,6 +166,10 @@ class TrainerV2:
             "total": 0
         }
         
+        # Lists for F1 score calculation
+        true_ls = []
+        top1_ls = []
+        
         for batch in data_loader:
             # Move to device
             loc_seq = batch['loc_seq'].to(self.device)
@@ -180,7 +185,7 @@ class TrainerV2:
             logits = self.model(loc_seq, user_seq, weekday_seq, start_min_seq, dur_seq, diff_seq, mask)
             
             # Calculate metrics
-            result, _, _ = calculate_correct_total_prediction(logits, target)
+            result, batch_true, batch_top1 = calculate_correct_total_prediction(logits, target)
             
             metrics["correct@1"] += result[0]
             metrics["correct@3"] += result[1]
@@ -189,6 +194,17 @@ class TrainerV2:
             metrics["rr"] += result[4]
             metrics["ndcg"] += result[5]
             metrics["total"] += result[6]
+            
+            # Collect for F1 score
+            true_ls.extend(batch_true.tolist())
+            if not batch_top1.shape:
+                top1_ls.extend([batch_top1.tolist()])
+            else:
+                top1_ls.extend(batch_top1.tolist())
+        
+        # Calculate F1 score
+        f1 = f1_score(true_ls, top1_ls, average="weighted")
+        metrics["f1"] = f1
         
         # Calculate percentages
         perf = get_performance_dict(metrics)
@@ -197,6 +213,7 @@ class TrainerV2:
         print(f'  Acc@1:  {perf["acc@1"]:.2f}%')
         print(f'  Acc@5:  {perf["acc@5"]:.2f}%')
         print(f'  Acc@10: {perf["acc@10"]:.2f}%')
+        print(f'  F1:     {100 * f1:.2f}%')
         print(f'  MRR:    {perf["mrr"]:.2f}%')
         print(f'  NDCG:   {perf["ndcg"]:.2f}%\n')
         

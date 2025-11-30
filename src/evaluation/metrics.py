@@ -89,7 +89,7 @@ def get_performance_dict(return_dict):
     Convert raw metric counts to percentages.
     
     Args:
-        return_dict: Dictionary with correct@k, rr, ndcg, total counts
+        return_dict: Dictionary with correct@k, rr, ndcg, f1, total counts
     
     Returns:
         Dictionary with accuracy percentages
@@ -101,7 +101,7 @@ def get_performance_dict(return_dict):
         "correct@10": return_dict["correct@10"],
         "rr": return_dict["rr"],
         "ndcg": return_dict["ndcg"],
-        "f1": return_dict["f1"],
+        "f1": return_dict.get("f1", 0),
         "total": return_dict["total"],
     }
 

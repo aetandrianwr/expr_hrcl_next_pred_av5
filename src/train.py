@@ -111,6 +111,7 @@ def main():
     print(f"Test Acc@1: {test_perf['acc@1']:.2f}%")
     print(f"Test Acc@5: {test_perf['acc@5']:.2f}%")
     print(f"Test Acc@10: {test_perf['acc@10']:.2f}%")
+    print(f"Test F1: {100 * test_perf['f1']:.2f}%")
     print(f"Test MRR: {test_perf['mrr']:.2f}%")
     print(f"Test NDCG: {test_perf['ndcg']:.2f}%")
     print("=" * 80)
