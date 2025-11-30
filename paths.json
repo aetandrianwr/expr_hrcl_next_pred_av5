@@ -1,3 +1,4 @@
 {
-    "raw_geolife": "./data/geolife/Data"
+    "raw_geolife": "./data/geolife/Data",
+    "raw_diy": "./data/diy/raw"
 }
