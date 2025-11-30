@@ -51,25 +51,25 @@ def get_dataset(paths_config, preprocess_config):
     # Convert to GeoDataFrame
     print("Converting to GeoDataFrame...")
     geometry = [Point(xy) for xy in zip(raw_df['longitude'], raw_df['latitude'])]
-    gdf = gpd.GeoDataFrame(raw_df, geometry=geometry, crs='EPSG:4326')
+    raw_df = gpd.GeoDataFrame(raw_df, geometry=geometry, crs='EPSG:4326')
     
     # Drop lat/lon columns and set index
-    gdf = gdf.drop(columns=['latitude', 'longitude'])
-    gdf.index.name = 'id'
-    gdf = gdf.reset_index()
+    raw_df = raw_df.drop(columns=['latitude', 'longitude'])
+    raw_df.index.name = 'id'
+    raw_df = raw_df.reset_index()
     
     # Parse timestamps and set timezone
     print("Parsing timestamps...")
-    gdf['tracked_at'] = pd.to_datetime(gdf['tracked_at'])
-    gdf['tracked_at'] = gdf['tracked_at'].dt.tz_convert(timezone)
+    raw_df['tracked_at'] = pd.to_datetime(raw_df['tracked_at'])
+    raw_df['tracked_at'] = raw_df['tracked_at'].dt.tz_convert(timezone)
     
     # Rename geometry column to geom AFTER setting timezone
-    gdf = gdf.rename(columns={'geometry': 'geom'})
-    gdf = gdf.set_geometry('geom')
+    raw_df = raw_df.rename(columns={'geometry': 'geom'})
+    raw_df = raw_df.set_geometry('geom')
     
     # Set index
-    gdf = gdf.set_index('id')
-    pfs = gdf.as_positionfixes
+    raw_df = raw_df.set_index('id')
+    pfs = raw_df.as_positionfixes
     
     print(f"Loaded {len(pfs)} position fixes from {pfs['user_id'].nunique()} users")
     
