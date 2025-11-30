@@ -1,0 +1,83 @@
+checkpoint:
+  mode: min
+  monitor: val_loss
+  save_best: true
+  save_last: true
+data:
+  data_dir: data/geolife
+  dataset_name: geolife
+  max_seq_len: 60
+  num_locations: 1187
+  num_users: 46
+  num_weekdays: 7
+  test_file: geolife_transformer_7_test.pk
+  train_file: geolife_transformer_7_train.pk
+  val_file: geolife_transformer_7_validation.pk
+evaluation:
+  metrics:
+  - acc@1
+  - acc@3
+  - acc@5
+  - acc@10
+  - mrr
+  - ndcg
+  - f1
+  save_predictions: false
+experiment:
+  dataset: geolife
+  description: Baseline hierarchical transformer model for GeoLife dataset
+  name: geolife_quick_test
+  version: '1.0'
+logging:
+  log_interval: 50
+  verbose: true
+  wandb:
+    enabled: false
+    entity: null
+    project: next-location-prediction
+model:
+  d_model: 128
+  dim_feedforward: 256
+  dropout: 0.3
+  loc_emb_dim: 64
+  name: HistoryCentricModel
+  nhead: 4
+  num_layers: 2
+  time_emb_dim: 8
+  user_emb_dim: 16
+  weekday_emb_dim: 4
+paths:
+  checkpoints_dir: results/checkpoints
+  logs_dir: results/logs
+  predictions_dir: results/predictions
+  results_dir: results
+  runs_dir: runs
+system:
+  deterministic: true
+  device: cuda
+  num_workers: 2
+  pin_memory: true
+  seed: 42
+training:
+  batch_size: 96
+  betas:
+  - 0.9
+  - 0.999
+  early_stopping:
+    metric: val_loss
+    mode: min
+    patience: 20
+  eps: 1.0e-08
+  grad_clip: 1.0
+  label_smoothing: 0.02
+  learning_rate: 0.0025
+  num_epochs: 5
+  optimizer: adamw
+  scheduler:
+    T_max: 50
+    factor: 0.6
+    min_lr: 5.0e-07
+    patience: 10
+    type: reduce_on_plateau
+    warmup_epochs: 3
+  weight_decay: 8.0e-05
