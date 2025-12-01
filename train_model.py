@@ -152,6 +152,60 @@ def main():
     logger.info(f"Model: {config.get('model.name')}")
     logger.info(f"Total parameters: {num_params:,}")
     
+    # Validate model configuration matches config file
+    logger.info("\n" + "=" * 80)
+    logger.info("MODEL CONFIGURATION VALIDATION")
+    logger.info("=" * 80)
+    
+    config_mismatches = []
+    
+    # Check d_model
+    if hasattr(model, 'd_model'):
+        config_d_model = config.get('model.d_model')
+        if model.d_model != config_d_model:
+            msg = f"d_model: Config={config_d_model}, Model={model.d_model}"
+            config_mismatches.append(msg)
+            logger.warning(f"⚠ MISMATCH: {msg}")
+        else:
+            logger.info(f"✓ d_model: {model.d_model}")
+    
+    # Check embedding dimensions
+    if hasattr(model, 'loc_emb'):
+        model_loc_dim = model.loc_emb.embedding_dim
+        config_loc_dim = config.get('model.loc_emb_dim')
+        if model_loc_dim != config_loc_dim:
+            msg = f"loc_emb_dim: Config={config_loc_dim}, Model={model_loc_dim}"
+            config_mismatches.append(msg)
+            logger.warning(f"⚠ MISMATCH: {msg}")
+        else:
+            logger.info(f"✓ loc_emb_dim: {model_loc_dim}")
+    
+    if hasattr(model, 'user_emb'):
+        model_user_dim = model.user_emb.embedding_dim
+        config_user_dim = config.get('model.user_emb_dim')
+        if model_user_dim != config_user_dim:
+            msg = f"user_emb_dim: Config={config_user_dim}, Model={model_user_dim}"
+            config_mismatches.append(msg)
+            logger.warning(f"⚠ MISMATCH: {msg}")
+        else:
+            logger.info(f"✓ user_emb_dim: {model_user_dim}")
+    
+    if config_mismatches:
+        logger.warning("\n" + "!" * 80)
+        logger.warning("WARNING: Model architecture differs from config file!")
+        logger.warning("This may indicate:")
+        logger.warning("  1. Config file needs updating to match model")
+        logger.warning("  2. Model needs fixing to respect config parameters")
+        logger.warning("  3. Intentional override (if using getattr defaults)")
+        logger.warning("Mismatches found:")
+        for mismatch in config_mismatches:
+            logger.warning(f"  - {mismatch}")
+        logger.warning("!" * 80 + "\n")
+    else:
+        logger.info("✓ All config parameters match model architecture")
+    
+    logger.info("=" * 80)
+    
     if num_params >= 500000:
         logger.warning(f"WARNING: Model has {num_params:,} parameters (limit is 500K)")
         logger.warning(f"Exceeded by: {num_params - 500000:,}")

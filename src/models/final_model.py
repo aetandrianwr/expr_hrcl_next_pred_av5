@@ -28,50 +28,57 @@ class FinalCompactModel(nn.Module):
     def __init__(self, config):
         super().__init__()
         
-        # Core parameters
+        # Get config parameters with defaults for backward compatibility
         self.num_locations = config.num_locations
-        self.d_model = 96  # Reduced from config
+        self.d_model = getattr(config, 'd_model', 96)
+        loc_emb_dim = getattr(config, 'loc_emb_dim', 64)
+        user_emb_dim = getattr(config, 'user_emb_dim', 16)
+        nhead = getattr(config, 'nhead', 4)
+        dim_feedforward = getattr(config, 'dim_feedforward', 192)
+        dropout = getattr(config, 'dropout', 0.4)
         
-        # Location embedding (main parameter consumer)
-        # 1187 locations * 64 dims = 76K params
-        self.loc_emb = nn.Embedding(config.num_locations, 64, padding_idx=0)
+        # Calculate temporal dimension to match d_model
+        temporal_dim = self.d_model - loc_emb_dim - user_emb_dim
         
-        # Compact feature encoders
-        # User: just 16 dims
-        self.user_emb = nn.Embedding(config.num_users, 16, padding_idx=0)
+        # Location embedding
+        self.loc_emb = nn.Embedding(config.num_locations, loc_emb_dim, padding_idx=0)
         
-        # Temporal: cyclic sin/cos + learned projection (compact)
-        self.temporal_proj = nn.Linear(6, 16)  # 6 features: time_sin, time_cos, dur, wd_sin, wd_cos, gap
+        # User embedding
+        self.user_emb = nn.Embedding(config.num_users, user_emb_dim, padding_idx=0)
         
-        # Feature fusion: 64 + 16 + 16 = 96
-        self.input_norm = nn.LayerNorm(96)
+        # Temporal: cyclic sin/cos + learned projection
+        self.temporal_proj = nn.Linear(6, temporal_dim)  # 6 features: time_sin, time_cos, dur, wd_sin, wd_cos, gap
+        
+        # Feature fusion: loc_emb_dim + user_emb_dim + temporal_dim = d_model
+        self.input_norm = nn.LayerNorm(self.d_model)
         
         # Positional encoding
-        pe = torch.zeros(60, 96)
-        position = torch.arange(0, 60, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, 96, 2).float() * (-math.log(10000.0) / 96))
+        max_len = getattr(config, 'max_seq_len', 100)
+        pe = torch.zeros(max_len, self.d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-math.log(10000.0) / self.d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
         
-        # Single transformer layer (minimal)
-        self.attn = nn.MultiheadAttention(96, 4, dropout=0.4, batch_first=True)
+        # Transformer layer
+        self.attn = nn.MultiheadAttention(self.d_model, nhead, dropout=dropout, batch_first=True)
         self.ff = nn.Sequential(
-            nn.Linear(96, 192),
+            nn.Linear(self.d_model, dim_feedforward),
             nn.GELU(),
-            nn.Dropout(0.4),
-            nn.Linear(192, 96)
+            nn.Dropout(dropout),
+            nn.Linear(dim_feedforward, self.d_model)
         )
-        self.norm1 = nn.LayerNorm(96)
-        self.norm2 = nn.LayerNorm(96)
-        self.dropout = nn.Dropout(0.4)
+        self.norm1 = nn.LayerNorm(self.d_model)
+        self.norm2 = nn.LayerNorm(self.d_model)
+        self.dropout = nn.Dropout(dropout)
         
-        # Prediction head (compact)
+        # Prediction head
         self.predictor = nn.Sequential(
-            nn.Linear(96, 192),
+            nn.Linear(self.d_model, dim_feedforward),
             nn.GELU(),
-            nn.Dropout(0.3),
-            nn.Linear(192, config.num_locations)
+            nn.Dropout(dropout * 0.75),  # Slightly less dropout in prediction head
+            nn.Linear(dim_feedforward, config.num_locations)
         )
         
         # History boost parameters

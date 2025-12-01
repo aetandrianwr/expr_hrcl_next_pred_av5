@@ -28,44 +28,55 @@ class HistoryCentricModel(nn.Module):
         super().__init__()
         
         self.num_locations = config.num_locations
-        self.d_model = 80  # Compact
+        
+        # Get config parameters with defaults for backward compatibility
+        self.d_model = getattr(config, 'd_model', 80)
+        loc_emb_dim = getattr(config, 'loc_emb_dim', 56)
+        user_emb_dim = getattr(config, 'user_emb_dim', 12)
+        nhead = getattr(config, 'nhead', 4)
+        dim_feedforward = getattr(config, 'dim_feedforward', 160)
+        dropout = getattr(config, 'dropout', 0.35)
+        
+        # Calculate temporal dimension to match d_model
+        temporal_dim = self.d_model - loc_emb_dim - user_emb_dim
         
         # Core embeddings
-        self.loc_emb = nn.Embedding(config.num_locations, 56, padding_idx=0)
-        self.user_emb = nn.Embedding(config.num_users, 12, padding_idx=0)
+        self.loc_emb = nn.Embedding(config.num_locations, loc_emb_dim, padding_idx=0)
+        self.user_emb = nn.Embedding(config.num_users, user_emb_dim, padding_idx=0)
         
-        # Compact temporal encoder
-        self.temporal_proj = nn.Linear(6, 12)  # sin/cos time, dur, sin/cos wd, gap
+        # Temporal encoder
+        self.temporal_proj = nn.Linear(6, temporal_dim)  # sin/cos time, dur, sin/cos wd, gap
         
-        # Input fusion: 56 + 12 + 12 = 80
-        self.input_norm = nn.LayerNorm(80)
+        # Input fusion: loc_emb_dim + user_emb_dim + temporal_dim = d_model
+        self.input_norm = nn.LayerNorm(self.d_model)
         
         # Positional encoding
-        pe = torch.zeros(60, 80)
-        position = torch.arange(0, 60, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, 80, 2).float() * (-math.log(10000.0) / 80))
+        max_len = getattr(config, 'max_seq_len', 100)
+        pe = torch.zeros(max_len, self.d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, self.d_model, 2).float() * (-math.log(10000.0) / self.d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
         
-        # Very compact transformer
-        self.attn = nn.MultiheadAttention(80, 4, dropout=0.35, batch_first=True)
+        # Transformer
+        self.attn = nn.MultiheadAttention(self.d_model, nhead, dropout=dropout, batch_first=True)
         self.ff = nn.Sequential(
-            nn.Linear(80, 160),
+            nn.Linear(self.d_model, dim_feedforward),
             nn.GELU(),
-            nn.Dropout(0.35),
-            nn.Linear(160, 80)
+            nn.Dropout(dropout),
+            nn.Linear(dim_feedforward, self.d_model)
         )
-        self.norm1 = nn.LayerNorm(80)
-        self.norm2 = nn.LayerNorm(80)
-        self.dropout = nn.Dropout(0.35)
+        self.norm1 = nn.LayerNorm(self.d_model)
+        self.norm2 = nn.LayerNorm(self.d_model)
+        self.dropout = nn.Dropout(dropout)
         
         # Prediction head
         self.predictor = nn.Sequential(
-            nn.Linear(80, 160),
+            nn.Linear(self.d_model, dim_feedforward),
             nn.GELU(),
-            nn.Dropout(0.3),
-            nn.Linear(160, config.num_locations)
+            nn.Dropout(dropout * 0.85),  # Slightly less dropout in prediction head
+            nn.Linear(dim_feedforward, config.num_locations)
         )
         
         # History scoring parameters (learnable) - optimized balance

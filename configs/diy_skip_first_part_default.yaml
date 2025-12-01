@@ -1,20 +1,20 @@
-# GeoLife Dataset Default Configuration
+# DIY Skip First Part Dataset Default Configuration
 # Production-level configuration for next-location prediction
 
 # Experiment metadata
 experiment:
-  name: "geolife_baseline"
-  description: "Baseline hierarchical transformer model for GeoLife dataset"
-  dataset: "geolife"
+  name: "diy_skip_first_part_baseline"
+  description: "Baseline transformer model for DIY skip first part dataset"
+  dataset: "diy_skip_first_part"
   version: "1.0"
 
 # Dataset configuration
 data:
-  dataset_name: "geolife"
-  data_dir: "data/geolife"
-  train_file: "geolife_transformer_7_train.pk"
-  val_file: "geolife_transformer_7_validation.pk"
-  test_file: "geolife_transformer_7_test.pk"
+  dataset_name: "diy_skip_first_part"
+  data_dir: "data/diy_skip_first_part"
+  train_file: "diy_skip_first_part_transformer_7_train.pk"
+  val_file: "diy_skip_first_part_transformer_7_validation.pk"
+  test_file: "diy_skip_first_part_transformer_7_test.pk"
 
 # Model architecture
 model:
