@@ -15,12 +15,6 @@ data:
   train_file: "train.pk"
   val_file: "val.pk"
   test_file: "test.pk"
-  
-  # Dataset statistics (UPDATE THESE)
-  num_locations: 1000  # Total number of locations
-  num_users: 50  # Total number of users
-  num_weekdays: 7
-  max_seq_len: 60
 
 # Model architecture
 model:

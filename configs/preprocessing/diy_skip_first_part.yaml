@@ -31,7 +31,7 @@ user_quality:
 
 
 locations:
-  epsilon: 20  # meters for DBSCAN clustering
+  epsilon: 50  # meters for DBSCAN clustering
   num_samples: 2  # minimum samples for DBSCAN
   distance_metric: "haversine"
   agg_level: "dataset"
@@ -42,7 +42,7 @@ staypoint_merging:
 
 sequence_generation:
   previous_days: [7]  # days of history to consider
-  min_sequence_length: 2  # minimum history records required (was 3 in comment, actual default was 2)
+  min_sequence_length: 3  # minimum history records
 
 dataset_split:
   train_ratio: 0.8

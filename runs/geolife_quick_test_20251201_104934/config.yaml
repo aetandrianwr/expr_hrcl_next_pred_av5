@@ -50,7 +50,7 @@ paths:
   runs_dir: runs
 system:
   deterministic: true
-  device: auto
+  device: cuda
   num_workers: 2
   pin_memory: true
   seed: 42

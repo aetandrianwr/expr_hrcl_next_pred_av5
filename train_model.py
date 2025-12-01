@@ -23,6 +23,7 @@ sys.path.insert(0, src_path)
 from utils.config_manager import ConfigManager
 from utils.results_tracker import ResultsTracker
 from utils.logger import ExperimentLogger
+from utils.data_inspector import infer_dataset_parameters
 from data.dataset import get_dataloader
 from models.history_centric import HistoryCentricModel
 from training.trainer_v3 import ProductionTrainer
@@ -71,14 +72,29 @@ def main():
     logger.info(f"Device: {config.device}")
     logger.info(f"Random seed: {seed}")
     
-    # Load data
-    logger.info("\nLoading data...")
+    # Infer dataset parameters from training data
+    logger.info("\nInferring dataset parameters from training data...")
     data_dir = config.get('data.data_dir')
     train_file = config.get('data.train_file')
+    train_file_path = os.path.join(data_dir, train_file)
+    
+    inferred_params = infer_dataset_parameters(train_file_path)
+    
+    logger.info("=" * 80)
+    logger.info("INFERRED DATASET PARAMETERS")
+    logger.info("=" * 80)
+    logger.info(f"num_locations: {inferred_params['num_locations']} ({inferred_params['num_locations']-1} max + 1 for padding)")
+    logger.info(f"num_users: {inferred_params['num_users']} ({inferred_params['num_users']-1} max + 1 for padding)")
+    logger.info(f"num_weekdays: {inferred_params['num_weekdays']}")
+    logger.info(f"max_seq_len: {inferred_params['max_seq_len']}")
+    logger.info("=" * 80)
+    
+    # Load data
+    logger.info("\nLoading data...")
     val_file = config.get('data.val_file')
     test_file = config.get('data.test_file')
     batch_size = config.get('training.batch_size')
-    max_seq_len = config.get('data.max_seq_len')
+    max_seq_len = inferred_params['max_seq_len']  # Use inferred value
     num_workers = config.get('system.num_workers')
     
     train_loader = get_dataloader(
@@ -112,10 +128,13 @@ def main():
     
     # Build config object for model (backward compatibility)
     class ModelConfig:
-        def __init__(self, config_dict):
-            self.num_locations = config_dict.get('data.num_locations')
-            self.num_users = config_dict.get('data.num_users')
-            self.num_weekdays = config_dict.get('data.num_weekdays')
+        def __init__(self, config_dict, inferred_params):
+            # Use inferred parameters instead of config
+            self.num_locations = inferred_params['num_locations']
+            self.num_users = inferred_params['num_users']
+            self.num_weekdays = inferred_params['num_weekdays']
+            self.max_seq_len = inferred_params['max_seq_len']
+            # Keep other parameters from config
             self.loc_emb_dim = config_dict.get('model.loc_emb_dim')
             self.user_emb_dim = config_dict.get('model.user_emb_dim')
             self.weekday_emb_dim = config_dict.get('model.weekday_emb_dim')
@@ -125,9 +144,8 @@ def main():
             self.num_layers = config_dict.get('model.num_layers')
             self.dim_feedforward = config_dict.get('model.dim_feedforward')
             self.dropout = config_dict.get('model.dropout')
-            self.max_seq_len = config_dict.get('data.max_seq_len')
     
-    model_config = ModelConfig(config)
+    model_config = ModelConfig(config, inferred_params)
     model = HistoryCentricModel(model_config)
     num_params = model.count_parameters()
     
