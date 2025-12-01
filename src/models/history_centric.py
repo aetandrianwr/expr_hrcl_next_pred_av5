@@ -79,11 +79,20 @@ class HistoryCentricModel(nn.Module):
             nn.Linear(dim_feedforward, config.num_locations)
         )
         
-        # History scoring parameters (learnable) - optimized balance
-        self.recency_decay = nn.Parameter(torch.tensor(0.62))
-        self.freq_weight = nn.Parameter(torch.tensor(2.2))
-        self.history_scale = nn.Parameter(torch.tensor(11.0))
-        self.model_weight = nn.Parameter(torch.tensor(0.22))
+        # History scoring parameters (learnable) - dataset-specific initialization
+        dataset_name = getattr(config, 'dataset_name', None)
+        if dataset_name == 'diy_skip_first_part':
+            # Tuned parameters for diy_skip_first_part dataset
+            self.recency_decay = nn.Parameter(torch.tensor(0.75))
+            self.freq_weight = nn.Parameter(torch.tensor(3.5))
+            self.history_scale = nn.Parameter(torch.tensor(15.0))
+            self.model_weight = nn.Parameter(torch.tensor(0.15))
+        else:
+            # Default parameters for other datasets (geolife, etc.)
+            self.recency_decay = nn.Parameter(torch.tensor(0.62))
+            self.freq_weight = nn.Parameter(torch.tensor(2.2))
+            self.history_scale = nn.Parameter(torch.tensor(11.0))
+            self.model_weight = nn.Parameter(torch.tensor(0.22))
         
         self._init_weights()
     

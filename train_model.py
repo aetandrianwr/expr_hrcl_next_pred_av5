@@ -144,6 +144,7 @@ def main():
             self.num_layers = config_dict.get('model.num_layers')
             self.dim_feedforward = config_dict.get('model.dim_feedforward')
             self.dropout = config_dict.get('model.dropout')
+            self.dataset_name = config_dict.get('experiment.dataset')
     
     model_config = ModelConfig(config, inferred_params)
     model = HistoryCentricModel(model_config)
@@ -152,9 +153,102 @@ def main():
     logger.info(f"Model: {config.get('model.name')}")
     logger.info(f"Total parameters: {num_params:,}")
     
+    # Display ALL actual parameters being used by the training script
+    logger.info("\n" + "=" * 80)
+    logger.info("ACTUAL PARAMETERS BEING USED (Not Config File Values)")
+    logger.info("=" * 80)
+    
+    # ========== DATA PARAMETERS (Auto-Inferred) ==========
+    logger.info("\n[DATA] Parameters (auto-inferred from dataset files):")
+    logger.info(f"  Dataset: {config.get('experiment.dataset')}")
+    logger.info(f"  Data directory: {data_dir}")
+    logger.info(f"  Train file: {train_file}")
+    logger.info(f"  Val file: {val_file}")
+    logger.info(f"  Test file: {test_file}")
+    logger.info(f"  num_locations: {model_config.num_locations} (vocabulary size)")
+    logger.info(f"  num_users: {model_config.num_users} (user count)")
+    logger.info(f"  num_weekdays: {model_config.num_weekdays}")
+    logger.info(f"  max_seq_len: {model_config.max_seq_len} (max sequence length in dataset)")
+    logger.info(f"  batch_size: {batch_size}")
+    logger.info(f"  num_workers: {num_workers}")
+    logger.info(f"  Train batches: {len(train_loader)}")
+    logger.info(f"  Val batches: {len(val_loader)}")
+    logger.info(f"  Test batches: {len(test_loader)}")
+    
+    # ========== MODEL ARCHITECTURE (From Model Object) ==========
+    logger.info("\n[MODEL] Architecture (actual model layers):")
+    logger.info(f"  Model class: {model.__class__.__name__}")
+    logger.info(f"  d_model: {model.d_model}")
+    if hasattr(model, 'loc_emb'):
+        logger.info(f"  loc_emb_dim: {model.loc_emb.embedding_dim}")
+        logger.info(f"  loc_emb vocab: {model.loc_emb.num_embeddings}")
+    if hasattr(model, 'user_emb'):
+        logger.info(f"  user_emb_dim: {model.user_emb.embedding_dim}")
+        logger.info(f"  user_emb vocab: {model.user_emb.num_embeddings}")
+    if hasattr(model, 'attn'):
+        logger.info(f"  nhead: {model.attn.num_heads}")
+    
+    # Get actual dropout value
+    dropout_val = None
+    if hasattr(model, 'dropout') and hasattr(model.dropout, 'p'):
+        dropout_val = model.dropout.p
+        logger.info(f"  dropout: {dropout_val}")
+    
+    # Calculate dim_feedforward from model
+    dim_feedforward = None
+    if hasattr(model, 'ff') and len(model.ff) > 0:
+        for layer in model.ff:
+            if isinstance(layer, torch.nn.Linear):
+                dim_feedforward = layer.out_features
+                break
+    if dim_feedforward:
+        logger.info(f"  dim_feedforward: {dim_feedforward}")
+    
+    logger.info(f"  Total parameters: {num_params:,}")
+    
+    # ========== TRAINING PARAMETERS (Actual Values Used) ==========
+    logger.info("\n[TRAINING] Training parameters (being used):")
+    logger.info(f"  num_epochs: {config.get('training.num_epochs')}")
+    logger.info(f"  learning_rate: {config.get('training.learning_rate')}")
+    logger.info(f"  weight_decay: {config.get('training.weight_decay')}")
+    logger.info(f"  grad_clip: {config.get('training.grad_clip')}")
+    logger.info(f"  label_smoothing: {config.get('training.label_smoothing')}")
+    logger.info(f"  optimizer: {config.get('training.optimizer')}")
+    logger.info(f"  optimizer_betas: {config.get('training.betas')}")
+    logger.info(f"  optimizer_eps: {config.get('training.eps')}")
+    
+    # ========== SCHEDULER PARAMETERS ==========
+    logger.info("\n[SCHEDULER] Learning rate scheduler:")
+    logger.info(f"  type: {config.get('training.scheduler.type')}")
+    logger.info(f"  patience: {config.get('training.scheduler.patience')}")
+    logger.info(f"  factor: {config.get('training.scheduler.factor')}")
+    logger.info(f"  min_lr: {config.get('training.scheduler.min_lr')}")
+    logger.info(f"  warmup_epochs: {config.get('training.scheduler.warmup_epochs')}")
+    
+    # ========== EARLY STOPPING ==========
+    logger.info("\n[EARLY STOPPING]:")
+    logger.info(f"  patience: {config.get('training.early_stopping.patience')}")
+    logger.info(f"  metric: {config.get('training.early_stopping.metric')}")
+    logger.info(f"  mode: {config.get('training.early_stopping.mode')}")
+    
+    # ========== SYSTEM PARAMETERS ==========
+    logger.info("\n[SYSTEM] System configuration:")
+    logger.info(f"  device: {config.device}")
+    logger.info(f"  seed: {seed}")
+    logger.info(f"  deterministic: {config.get('system.deterministic')}")
+    logger.info(f"  pin_memory: {config.get('system.pin_memory')}")
+    
+    # ========== PATHS ==========
+    logger.info("\n[PATHS] Output directories:")
+    logger.info(f"  run_dir: {config.run_dir}")
+    logger.info(f"  checkpoint_dir: {config.checkpoint_dir}")
+    logger.info(f"  log_dir: {config.log_dir}")
+    
+    logger.info("=" * 80)
+    
     # Validate model configuration matches config file
     logger.info("\n" + "=" * 80)
-    logger.info("MODEL CONFIGURATION VALIDATION")
+    logger.info("CONFIGURATION VALIDATION (Config File vs Actual Model)")
     logger.info("=" * 80)
     
     config_mismatches = []
@@ -163,7 +257,7 @@ def main():
     if hasattr(model, 'd_model'):
         config_d_model = config.get('model.d_model')
         if model.d_model != config_d_model:
-            msg = f"d_model: Config={config_d_model}, Model={model.d_model}"
+            msg = f"d_model: Config={config_d_model}, Actual={model.d_model}"
             config_mismatches.append(msg)
             logger.warning(f"⚠ MISMATCH: {msg}")
         else:
@@ -174,7 +268,7 @@ def main():
         model_loc_dim = model.loc_emb.embedding_dim
         config_loc_dim = config.get('model.loc_emb_dim')
         if model_loc_dim != config_loc_dim:
-            msg = f"loc_emb_dim: Config={config_loc_dim}, Model={model_loc_dim}"
+            msg = f"loc_emb_dim: Config={config_loc_dim}, Actual={model_loc_dim}"
             config_mismatches.append(msg)
             logger.warning(f"⚠ MISMATCH: {msg}")
         else:
@@ -184,7 +278,7 @@ def main():
         model_user_dim = model.user_emb.embedding_dim
         config_user_dim = config.get('model.user_emb_dim')
         if model_user_dim != config_user_dim:
-            msg = f"user_emb_dim: Config={config_user_dim}, Model={model_user_dim}"
+            msg = f"user_emb_dim: Config={config_user_dim}, Actual={model_user_dim}"
             config_mismatches.append(msg)
             logger.warning(f"⚠ MISMATCH: {msg}")
         else:

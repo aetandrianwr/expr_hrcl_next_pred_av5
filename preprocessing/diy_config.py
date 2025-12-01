@@ -19,7 +19,7 @@ import trackintel as ti
 from utils import calculate_user_quality, enrich_time_info, split_dataset, get_valid_sequence
 
 
-def get_dataset(paths_config, preprocess_config):
+def get_dataset(paths_config, preprocess_config, use_checkpoint=True):
     """Construct the raw staypoint with location id dataset from DIY data."""
     
     # Extract all parameters from config
@@ -37,101 +37,119 @@ def get_dataset(paths_config, preprocess_config):
     print(f"Using epsilon={loc_params['epsilon']} for location clustering")
     print(f"Using timezone={timezone}")
     
-    # Read raw CSV file
-    print("Reading DIY dataset...")
-    nrows = preprocess_config.get('sample_rows', None)
-    if nrows:
-        print(f"Sampling first {nrows} rows for testing...")
-        raw_df = pd.read_csv(os.path.join(paths_config["raw_diy"], "raw_diy_mobility_dataset.csv"), nrows=nrows)
+    # Define checkpoint paths
+    checkpoint_dir = os.path.join(".", output_dir, "checkpoints")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    
+    checkpoint_sp_before_loc = os.path.join(checkpoint_dir, "sp_before_location_clustering.pk")
+    
+    # Try to load checkpoint for staypoints before location clustering
+    if use_checkpoint and os.path.exists(checkpoint_sp_before_loc):
+        print(f"Loading checkpoint: {checkpoint_sp_before_loc}")
+        with open(checkpoint_sp_before_loc, 'rb') as f:
+            sp = pickle.load(f)
+        print(f"Loaded {len(sp)} staypoints from checkpoint")
     else:
-        raw_df = pd.read_csv(os.path.join(paths_config["raw_diy"], "raw_diy_mobility_dataset.csv"))
-    
-    print(f"Loaded {len(raw_df)} rows")
-    
-    # Convert to GeoDataFrame
-    print("Converting to GeoDataFrame...")
-    geometry = [Point(xy) for xy in zip(raw_df['longitude'], raw_df['latitude'])]
-    raw_df = gpd.GeoDataFrame(raw_df, geometry=geometry, crs='EPSG:4326')
-    
-    # Drop lat/lon columns and set index
-    raw_df = raw_df.drop(columns=['latitude', 'longitude'])
-    raw_df.index.name = 'id'
-    raw_df = raw_df.reset_index()
-    
-    # Parse timestamps and set timezone
-    print("Parsing timestamps...")
-    raw_df['tracked_at'] = pd.to_datetime(raw_df['tracked_at'])
-    # raw_df['tracked_at'] = raw_df['tracked_at'].dt.tz_convert(timezone)
-    # raw_df['tracked_at'] = raw_df['tracked_at'].dt.tz_localize('Asia/Jakarta') # the raw data already in Jakarta Timezone
-    
-    # Rename geometry column to geom AFTER setting timezone
-    raw_df = raw_df.rename(columns={'geometry': 'geom'})
-    raw_df = raw_df.set_geometry('geom')
-    
-    # Set index
-    raw_df = raw_df.set_index('id')
-    pfs = raw_df.as_positionfixes
-    
-    print(f"Loaded {len(pfs)} position fixes from {pfs['user_id'].nunique()} users")
-    
-    # Generate staypoints
-    print("Generating staypoints...")
-    pfs, sp = pfs.as_positionfixes.generate_staypoints(
-        method=sp_params.get('method', 'sliding'),
-        distance_metric=sp_params.get('distance_metric', 'haversine'),
-        gap_threshold=sp_params['gap_threshold'],
-        include_last=sp_params['include_last'],
-        print_progress=sp_params['print_progress'],
-        dist_threshold=sp_params['dist_threshold'],
-        time_threshold=sp_params['time_threshold'],
-        n_jobs=sp_params['n_jobs']
-    )
-    
-    # Create activity flag
-    sp = sp.as_staypoints.create_activity_flag(
-        method=activity_params['method'],
-        time_threshold=activity_params['time_threshold']
-    )
-
-    ## select valid user, generate the file if user quality file is not generated
-    quality_path = os.path.join(".", output_dir, "quality")
-    quality_file = os.path.join(quality_path, "diy_slide_filtered.csv")
-    
-    # Check if we should skip quality check (for testing)
-    if quality_params.get('skip_check', False):
-        print("Skipping user quality check (test mode)")
-        valid_user = sp["user_id"].unique()
-    elif Path(quality_file).is_file():
-        print("Loading pre-computed user quality...")
-        valid_user = pd.read_csv(quality_file)["user_id"].values
-    else:
-        if not os.path.exists(quality_path):
-            os.makedirs(quality_path)
-        # generate triplegs
-        print("Generating triplegs for user quality assessment...")
-        pfs, tpls = pfs.as_positionfixes.generate_triplegs(sp)
-        # the trackintel trip generation
-        sp, tpls, trips = generate_trips(sp, tpls, add_geometry=False)
-
-        # Build quality filter from config (similar to GC preprocessing)
-        quality_filter = {
-            "day_filter": quality_params['day_filter'],
-            "window_size": quality_params['window_size']
-        }
-        if quality_params.get('min_thres') is not None:
-            quality_filter['min_thres'] = quality_params['min_thres']
-        if quality_params.get('mean_thres') is not None:
-            quality_filter['mean_thres'] = quality_params['mean_thres']
+        # Read raw CSV file
+        print("Reading DIY dataset...")
+        nrows = preprocess_config.get('sample_rows', None)
+        if nrows:
+            print(f"Sampling first {nrows} rows for testing...")
+            raw_df = pd.read_csv(os.path.join(paths_config["raw_diy"], "raw_diy_mobility_dataset.csv"), nrows=nrows)
+        else:
+            raw_df = pd.read_csv(os.path.join(paths_config["raw_diy"], "raw_diy_mobility_dataset.csv"))
         
-        print(f"Quality filter: {quality_filter}")
-        valid_user = calculate_user_quality(sp.copy(), trips.copy(), quality_file, quality_filter)
+        print(f"Loaded {len(raw_df)} rows")
+        
+        # Convert to GeoDataFrame
+        print("Converting to GeoDataFrame...")
+        geometry = [Point(xy) for xy in zip(raw_df['longitude'], raw_df['latitude'])]
+        raw_df = gpd.GeoDataFrame(raw_df, geometry=geometry, crs='EPSG:4326')
+        
+        # Drop lat/lon columns and set index
+        raw_df = raw_df.drop(columns=['latitude', 'longitude'])
+        raw_df.index.name = 'id'
+        raw_df = raw_df.reset_index()
+        
+        # Parse timestamps and set timezone
+        print("Parsing timestamps...")
+        raw_df['tracked_at'] = pd.to_datetime(raw_df['tracked_at'])
+        # raw_df['tracked_at'] = raw_df['tracked_at'].dt.tz_convert(timezone)
+        # raw_df['tracked_at'] = raw_df['tracked_at'].dt.tz_localize('Asia/Jakarta') # the raw data already in Jakarta Timezone
+        
+        # Rename geometry column to geom AFTER setting timezone
+        raw_df = raw_df.rename(columns={'geometry': 'geom'})
+        raw_df = raw_df.set_geometry('geom')
+        
+        # Set index
+        raw_df = raw_df.set_index('id')
+        pfs = raw_df.as_positionfixes
+        
+        print(f"Loaded {len(pfs)} position fixes from {pfs['user_id'].nunique()} users")
+        
+        # Generate staypoints
+        print("Generating staypoints...")
+        pfs, sp = pfs.as_positionfixes.generate_staypoints(
+            method=sp_params.get('method', 'sliding'),
+            distance_metric=sp_params.get('distance_metric', 'haversine'),
+            gap_threshold=sp_params['gap_threshold'],
+            include_last=sp_params['include_last'],
+            print_progress=sp_params['print_progress'],
+            dist_threshold=sp_params['dist_threshold'],
+            time_threshold=sp_params['time_threshold'],
+            n_jobs=sp_params['n_jobs']
+        )
+        
+        # Create activity flag
+        sp = sp.as_staypoints.create_activity_flag(
+            method=activity_params['method'],
+            time_threshold=activity_params['time_threshold']
+        )
 
-    sp = sp.loc[sp["user_id"].isin(valid_user)]
-    print(f"Valid users after quality filter: {len(valid_user)}")
+        ## select valid user, generate the file if user quality file is not generated
+        quality_path = os.path.join(".", output_dir, "quality")
+        quality_file = os.path.join(quality_path, "diy_slide_filtered.csv")
+        
+        # Check if we should skip quality check (for testing)
+        if quality_params.get('skip_check', False):
+            print("Skipping user quality check (test mode)")
+            valid_user = sp["user_id"].unique()
+        elif Path(quality_file).is_file():
+            print("Loading pre-computed user quality...")
+            valid_user = pd.read_csv(quality_file)["user_id"].values
+        else:
+            if not os.path.exists(quality_path):
+                os.makedirs(quality_path)
+            # generate triplegs
+            print("Generating triplegs for user quality assessment...")
+            pfs, tpls = pfs.as_positionfixes.generate_triplegs(sp)
+            # the trackintel trip generation
+            sp, tpls, trips = generate_trips(sp, tpls, add_geometry=False)
 
-    # filter activity staypoints
-    sp = sp.loc[sp["is_activity"] == True]
-    print(f"Activity staypoints: {len(sp)}")
+            # Build quality filter from config (similar to GC preprocessing)
+            quality_filter = {
+                "day_filter": quality_params['day_filter'],
+                "window_size": quality_params['window_size']
+            }
+            if quality_params.get('min_thres') is not None:
+                quality_filter['min_thres'] = quality_params['min_thres']
+            if quality_params.get('mean_thres') is not None:
+                quality_filter['mean_thres'] = quality_params['mean_thres']
+            
+            print(f"Quality filter: {quality_filter}")
+            valid_user = calculate_user_quality(sp.copy(), trips.copy(), quality_file, quality_filter)
+
+        sp = sp.loc[sp["user_id"].isin(valid_user)]
+        print(f"Valid users after quality filter: {len(valid_user)}")
+
+        # filter activity staypoints
+        sp = sp.loc[sp["is_activity"] == True]
+        print(f"Activity staypoints: {len(sp)}")
+        
+        # Save checkpoint before location clustering
+        print(f"Saving checkpoint: {checkpoint_sp_before_loc}")
+        with open(checkpoint_sp_before_loc, 'wb') as f:
+            pickle.dump(sp, f, protocol=pickle.HIGHEST_PROTOCOL)
     
     # Check if we have any data to process
     if len(sp) == 0:
@@ -288,6 +306,11 @@ if __name__ == "__main__":
         default=None,
         help="Use only first N rows for testing (optional)"
     )
+    parser.add_argument(
+        "--no-checkpoint",
+        action="store_true",
+        help="Disable checkpoint loading and force reprocessing from raw data"
+    )
     args = parser.parse_args()
     
     # Load paths configuration
@@ -308,4 +331,4 @@ if __name__ == "__main__":
     if 'seed' in PREPROCESS_CONFIG:
         np.random.seed(PREPROCESS_CONFIG['seed'])
     
-    get_dataset(paths_config=PATHS_CONFIG, preprocess_config=PREPROCESS_CONFIG)
+    get_dataset(paths_config=PATHS_CONFIG, preprocess_config=PREPROCESS_CONFIG, use_checkpoint=not args.no_checkpoint)
