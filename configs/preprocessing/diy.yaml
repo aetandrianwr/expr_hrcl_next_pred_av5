@@ -27,6 +27,8 @@ user_quality:
   min_thres: 0.6  # minimum quality threshold
   mean_thres: 0.7  # mean quality threshold
 
+
+
 locations:
   epsilon: 50  # meters for DBSCAN clustering
   num_samples: 2  # minimum samples for DBSCAN

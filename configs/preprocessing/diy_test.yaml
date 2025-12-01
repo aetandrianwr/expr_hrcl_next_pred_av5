@@ -1,0 +1,47 @@
+# DIY Dataset Preprocessing Configuration - TEST MODE
+# Very loose thresholds for testing with small samples
+
+dataset:
+  name: "diy"
+  raw_data_path: "data/diy/raw/raw_diy_mobility_dataset.csv"
+  output_dir: "data/diy_test"
+  timezone: "Asia/Jakarta"
+
+staypoints:
+  method: "sliding"
+  distance_metric: "haversine"
+  dist_threshold: 200  # meters - increased for more staypoints
+  time_threshold: 5  # minutes - reduced for more staypoints
+  gap_threshold: 1440  # 24*60 minutes
+  include_last: true
+  print_progress: true
+  n_jobs: -1
+
+activity_flag:
+  method: "time_threshold"
+  time_threshold: 5  # minutes - very low threshold
+
+# Skip quality check for testing mode
+user_quality:
+  skip_check: true  # skip quality filtering entirely for testing
+
+locations:
+  epsilon: 100  # meters for DBSCAN clustering - increased for easier clustering
+  num_samples: 1  # minimum samples for DBSCAN - reduced to minimum
+  distance_metric: "haversine"
+  agg_level: "dataset"
+  n_jobs: -1
+
+staypoint_merging:
+  max_time_gap: "1min"
+
+sequence_generation:
+  previous_days: [7]  # days of history to consider
+  min_sequence_length: 2  # minimum history records required - reduced
+
+dataset_split:
+  train_ratio: 0.6
+  val_ratio: 0.2
+  test_ratio: 0.2
+
+seed: 42

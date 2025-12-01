@@ -76,6 +76,8 @@ def get_dataset(paths_config, preprocess_config):
     # Generate staypoints
     print("Generating staypoints...")
     pfs, sp = pfs.as_positionfixes.generate_staypoints(
+        method=sp_params.get('method', 'sliding'),
+        distance_metric=sp_params.get('distance_metric', 'haversine'),
         gap_threshold=sp_params['gap_threshold'],
         include_last=sp_params['include_last'],
         print_progress=sp_params['print_progress'],
@@ -93,7 +95,12 @@ def get_dataset(paths_config, preprocess_config):
     ## select valid user, generate the file if user quality file is not generated
     quality_path = os.path.join(".", output_dir, "quality")
     quality_file = os.path.join(quality_path, "diy_slide_filtered.csv")
-    if Path(quality_file).is_file():
+    
+    # Check if we should skip quality check (for testing)
+    if quality_params.get('skip_check', False):
+        print("Skipping user quality check (test mode)")
+        valid_user = sp["user_id"].unique()
+    elif Path(quality_file).is_file():
         print("Loading pre-computed user quality...")
         valid_user = pd.read_csv(quality_file)["user_id"].values
     else:
@@ -124,6 +131,15 @@ def get_dataset(paths_config, preprocess_config):
     # filter activity staypoints
     sp = sp.loc[sp["is_activity"] == True]
     print(f"Activity staypoints: {len(sp)}")
+    
+    # Check if we have any data to process
+    if len(sp) == 0:
+        print("Error: No valid staypoints found after quality filtering. Cannot proceed.")
+        print("This might be due to:")
+        print("  1. Sample size too small (try increasing --sample parameter)")
+        print("  2. Quality thresholds too strict")
+        print("  3. Data quality issues")
+        return
 
     # generate locations
     print("Generating locations...")
@@ -164,14 +180,26 @@ def get_dataset(paths_config, preprocess_config):
     # save intermediate results for analysis
     sp_time.to_csv(f"./{output_dir}/sp_time_temp_diy.csv", index=False)
 
+    # Get split parameters
+    split_params = preprocess_config.get('dataset_split', {'train_ratio': 0.6, 'val_ratio': 0.2, 'test_ratio': 0.2})
+    
     #
-    _filter_sp_history(sp_time, output_dir, seq_params)
+    _filter_sp_history(sp_time, output_dir, seq_params, split_params)
 
 
-def _filter_sp_history(sp, output_dir, seq_params):
+def _filter_sp_history(sp, output_dir, seq_params, split_params):
     """To unify the comparision between different previous days"""
-    # classify the datasets, user dependent 0.6, 0.2, 0.2
-    train_data, vali_data, test_data = split_dataset(sp)
+    # classify the datasets, user dependent (configurable ratios)
+    train_data, vali_data, test_data = split_dataset(sp, split_params)
+    
+    # Check if we have data to process - early exit for test mode
+    if len(train_data) == 0 or len(vali_data) == 0 or len(test_data) == 0:
+        print(f"Warning: Insufficient data after initial split. Train: {len(train_data)}, Val: {len(vali_data)}, Test: {len(test_data)}")
+        print("Skipping sequence filtering and saving all available data...")
+        sp.to_csv(f"./{output_dir}/dataSet_diy.csv", index=False)
+        print("Final user size: ", sp["user_id"].unique().shape[0])
+        print("Dataset saved (test mode - no train/val/test split)")
+        return
 
     # encode unseen locations in validation and test into 0
     enc = OrdinalEncoder(dtype=np.int64, handle_unknown="use_encoded_value", unknown_value=-1).fit(
@@ -209,7 +237,17 @@ def _filter_sp_history(sp, output_dir, seq_params):
 
     filtered_sp = sp.loc[sp["user_id"].isin(valid_users)].copy()
 
-    train_data, vali_data, test_data = split_dataset(filtered_sp)
+    train_data, vali_data, test_data = split_dataset(filtered_sp, split_params)
+    
+    # Check if we have data to process
+    if len(train_data) == 0 or len(vali_data) == 0 or len(test_data) == 0:
+        print(f"Warning: Insufficient data after split. Train: {len(train_data)}, Val: {len(vali_data)}, Test: {len(test_data)}")
+        print("Saving minimal dataset with available data...")
+        # Just save what we have
+        filtered_sp.to_csv(f"./{output_dir}/dataSet_diy.csv", index=False)
+        print("Final user size: ", filtered_sp["user_id"].unique().shape[0])
+        print("Dataset saved (without proper train/val/test split)")
+        return
 
     # encode unseen locations in validation and test into 0
     enc = OrdinalEncoder(dtype=np.int64, handle_unknown="use_encoded_value", unknown_value=-1).fit(

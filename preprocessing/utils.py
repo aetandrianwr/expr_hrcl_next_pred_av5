@@ -79,9 +79,16 @@ def enrich_time_info(sp):
     sp.sort_values(by=["user_id", "start_day", "start_min"], inplace=True)
     sp = sp.reset_index(drop=True)
 
-    # 
+    # Convert user_id to integer if it's not already
+    if sp["user_id"].dtype == 'object' or sp["user_id"].dtype == 'string':
+        # Create mapping from unique user_ids to integers
+        unique_users = sp["user_id"].unique()
+        user_mapping = {user: idx for idx, user in enumerate(unique_users)}
+        sp["user_id"] = sp["user_id"].map(user_mapping)
+    else:
+        sp["user_id"] = sp["user_id"].astype(int)
+    
     sp["location_id"] = sp["location_id"].astype(int)
-    sp["user_id"] = sp["user_id"].astype(int)
 
     # final cleaning, reassign ids
     sp.index.name = "id"
@@ -117,23 +124,51 @@ def calculate_user_quality(sp, trips, file_path, quality_filter):
     sp["type"] = "sp"
     trips["type"] = "tpl"
     df_all = pd.concat([sp, trips])
+    
+    # Ensure duration column exists
+    if 'duration' not in df_all.columns:
+        df_all["duration"] = (df_all["finished_at"] - df_all["started_at"]).dt.total_seconds()
+    
+    # Debug: check durations before split
+    print(f"Before split - rows with positive duration: {(df_all['duration'] > 0).sum()} / {len(df_all)}")
+    
     df_all = _split_overlaps(df_all, granularity="day")
     df_all["duration"] = (df_all["finished_at"] - df_all["started_at"]).dt.total_seconds()
+    
+    # Debug: check durations after split
+    print(f"After split - rows with positive duration: {(df_all['duration'] > 0).sum()} / {len(df_all)}")
+    
     print("finished merge", df_all.shape)
     print("*" * 50)
 
-    if "min_thres" in quality_filter:
-        end_period = datetime.datetime(2017, 12, 26)
-        df_all = df_all.loc[df_all["finished_at"] < end_period]
+    # Note: The GC dataset uses a specific end_period filter
+    # For DIY dataset, we skip this filter as it's not applicable
+    # if "min_thres" in quality_filter:
+    #     end_period = datetime.datetime(2017, 12, 26)
+    #     df_all = df_all.loc[df_all["finished_at"] < end_period]
 
     print(len(df_all["user_id"].unique()))
 
+    # Debug: check what we're passing to temporal_tracking_quality
+    print(f"Checking df_all before quality check - shape: {df_all.shape}, positive durations: {(df_all['duration'] > 0).sum()}")
+    print(f"Duration stats: min={df_all['duration'].min()}, max={df_all['duration'].max()}, mean={df_all['duration'].mean()}")
+    
     # get quality
     total_quality = temporal_tracking_quality(df_all, granularity="all")
-    # get tracking days
-    total_quality["days"] = (
-        df_all.groupby("user_id").apply(lambda x: (x["finished_at"].max() - x["started_at"].min()).days).values
+    
+    # Handle case when temporal_tracking_quality returns None (no positive duration records)
+    if total_quality is None:
+        print("Warning: No records with positive duration found. Creating empty quality dataframe.")
+        total_quality = pd.DataFrame(columns=["user_id", "quality", "days"])
+        return []
+    
+    # get tracking days - only for users in total_quality
+    days_per_user = (
+        df_all.groupby("user_id")
+        .apply(lambda x: (x["finished_at"].max() - x["started_at"].min()).days)
     )
+    # Match only users that are in total_quality
+    total_quality["days"] = total_quality["user_id"].map(days_per_user)
     # filter based on days
     user_filter_day = (
         total_quality.loc[(total_quality["days"] > quality_filter["day_filter"])]
@@ -194,9 +229,20 @@ def _get_tracking_quality(df, window_size):
     return ret
 
 
-def split_dataset(totalData):
+def split_dataset(totalData, split_params=None):
     """Split dataset into train, vali and test."""
-    totalData = totalData.groupby("user_id",group_keys=False).apply(_get_split_days_user)
+    if split_params is None:
+        split_params = {'train_ratio': 0.6, 'val_ratio': 0.2, 'test_ratio': 0.2}
+    
+    if len(totalData) == 0:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
+    totalData = totalData.groupby("user_id",group_keys=False).apply(_get_split_days_user, split_params=split_params)
+    
+    # Check if Dataset column was created
+    if "Dataset" not in totalData.columns:
+        print("Warning: No Dataset column created. Returning empty splits.")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     train_data = totalData.loc[totalData["Dataset"] == "train"].copy()
     vali_data = totalData.loc[totalData["Dataset"] == "vali"].copy()
@@ -210,11 +256,26 @@ def split_dataset(totalData):
     return train_data, vali_data, test_data
 
 
-def _get_split_days_user(df):
+def _get_split_days_user(df, split_params=None):
     """Split the dataset according to the tracked day of each user."""
+    if len(df) == 0:
+        return df
+    
+    if split_params is None:
+        split_params = {'train_ratio': 0.6, 'val_ratio': 0.2, 'test_ratio': 0.2}
+    
+    train_ratio = split_params['train_ratio']
+    val_ratio = split_params['val_ratio']
+    
     maxDay = df["start_day"].max()
-    train_split = maxDay * 0.6
-    validation_split = maxDay * 0.8
+    train_split = maxDay * train_ratio
+    validation_split = maxDay * (train_ratio + val_ratio)
+    
+    # Debug: print split points for first user only
+    if not hasattr(_get_split_days_user, '_printed'):
+        print(f"Dataset split config: train={train_ratio}, val={val_ratio}, test={split_params['test_ratio']}")
+        print(f"Split points: train_split={train_split:.2f}, val_split={validation_split:.2f}, max_day={maxDay}")
+        _get_split_days_user._printed = True
 
     df["Dataset"] = "test"
     df.loc[df["start_day"] < train_split, "Dataset"] = "train"
@@ -222,7 +283,7 @@ def _get_split_days_user(df):
 
     return df
 
-def get_valid_sequence(input_df, previous_day=14):
+def get_valid_sequence(input_df, previous_day=14, min_length=3):
 
     valid_id = []
     for user in input_df["user_id"].unique():
@@ -238,7 +299,7 @@ def get_valid_sequence(input_df, previous_day=14):
 
             hist = df.iloc[:index]
             hist = hist.loc[(hist["start_day"] >= (row["start_day"] - previous_day))]
-            if len(hist) < 3:
+            if len(hist) < min_length:
                 continue
 
             valid_id.append(row["id"])

@@ -1,0 +1,50 @@
+# DIY Dataset Preprocessing Configuration - PARAMETER TEST
+# Tests that dataset_split parameters are actually used
+
+dataset:
+  name: "diy"
+  raw_data_path: "data/diy/raw/raw_diy_mobility_dataset.csv"
+  output_dir: "data/diy_param_test"
+  timezone: "Asia/Jakarta"
+
+staypoints:
+  method: "sliding"
+  distance_metric: "haversine"
+  dist_threshold: 200
+  time_threshold: 5
+  gap_threshold: 1440
+  include_last: true
+  print_progress: true
+  n_jobs: -1
+
+activity_flag:
+  method: "time_threshold"
+  time_threshold: 5
+
+user_quality:
+  day_filter: 1
+  window_size: 1
+  min_thres: 0.05
+  mean_thres: 0.05
+
+locations:
+  epsilon: 100
+  num_samples: 1
+  distance_metric: "haversine"
+  agg_level: "dataset"
+  n_jobs: -1
+
+staypoint_merging:
+  max_time_gap: "5min"
+
+sequence_generation:
+  previous_days: [7]
+  min_sequence_length: 2
+
+# TEST: Different split ratios (70/15/15 instead of 60/20/20)
+dataset_split:
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+seed: 12345  # Different seed to test
