@@ -40,3 +40,4 @@ env/
 data/*/raw/
 data/geolife/original_backup/
 data/geolife/new_preprocessing/
+data/diy*/

@@ -41,9 +41,9 @@ def save_pk_file(save_path, data):
         pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
-def split_dataset(totalData):
+def split_dataset(totalData, split_params):
     """Split dataset into train, vali and test."""
-    totalData = totalData.groupby("user_id", group_keys=False).apply(get_split_days_user)
+    totalData = totalData.groupby("user_id", group_keys=False).apply(get_split_days_user, split_params=split_params)
     
     train_data = totalData.loc[totalData["Dataset"] == "train"].copy()
     vali_data = totalData.loc[totalData["Dataset"] == "vali"].copy()
@@ -57,11 +57,14 @@ def split_dataset(totalData):
     return train_data, vali_data, test_data
 
 
-def get_split_days_user(df):
+def get_split_days_user(df, split_params):
     """Split the dataset according to the tracked day of each user."""
+    train_ratio = split_params.get('train_ratio', 0.6)
+    val_ratio = split_params.get('val_ratio', 0.2)
+    
     maxDay = df["start_day"].max()
-    train_split = maxDay * 0.6
-    vali_split = maxDay * 0.8
+    train_split = maxDay * train_ratio
+    vali_split = maxDay * (train_ratio + val_ratio)
     
     df["Dataset"] = "test"
     df.loc[df["start_day"] < train_split, "Dataset"] = "train"
@@ -70,7 +73,7 @@ def get_split_days_user(df):
     return df
 
 
-def get_valid_sequence_user(df, previous_day, valid_ids):
+def get_valid_sequence_user(df, previous_day, valid_ids, min_sequence_length=2):
     """Get the valid sequences per user."""
     df.reset_index(drop=True, inplace=True)
     
@@ -93,8 +96,8 @@ def get_valid_sequence_user(df, previous_day, valid_ids):
         if not (row["id"] in valid_ids):
             continue
         
-        # require at least 3 records (2 history + 1 current)
-        if len(hist) < 2:
+        # require at least min_sequence_length records (history + current)
+        if len(hist) < min_sequence_length:
             continue
         
         data_dict = {}
@@ -132,9 +135,37 @@ def generate_transformer_data(config):
     print("GENERATING TRANSFORMER DATA FILES")
     print("=" * 80)
     
+    # Extract parameters from config
     dataset_name = config['dataset']['name']
     output_dir = config['dataset']['output_dir']
-    previous_day = config['sequence_generation']['previous_days'][0]
+    
+    # Sequence generation parameters
+    seq_params = config.get('sequence_generation', {})
+    previous_day = seq_params.get('previous_days', [7])[0]
+    min_sequence_length = seq_params.get('min_sequence_length', 2)
+    
+    # Dataset split parameters
+    split_params = config.get('dataset_split', {
+        'train_ratio': 0.6,
+        'val_ratio': 0.2,
+        'test_ratio': 0.2
+    })
+    
+    # Duration truncation parameter (in minutes)
+    max_duration_days = config.get('max_duration_days', 2)
+    max_duration_minutes = 60 * 24 * max_duration_days - 1
+    
+    # Parallelization
+    n_jobs = config.get('n_jobs', -1)
+    
+    print(f"\nConfiguration:")
+    print(f"  Dataset: {dataset_name}")
+    print(f"  Output dir: {output_dir}")
+    print(f"  Previous days: {previous_day}")
+    print(f"  Min sequence length: {min_sequence_length}")
+    print(f"  Split ratios: train={split_params['train_ratio']}, val={split_params['val_ratio']}, test={split_params['test_ratio']}")
+    print(f"  Max duration: {max_duration_days} days ({max_duration_minutes} minutes)")
+    print(f"  Parallel jobs: {n_jobs}")
     
     # Load the preprocessed dataset
     dataset_path = os.path.join(output_dir, f"dataSet_{dataset_name}.csv")
@@ -149,12 +180,12 @@ def generate_transformer_data(config):
     # Sort data
     ori_data.sort_values(by=["user_id", "start_day", "start_min"], inplace=True)
     
-    # Truncate too long duration: > 2days to 2 days
-    ori_data.loc[ori_data["duration"] > 60 * 24 * 2 - 1, "duration"] = 60 * 24 * 2 - 1
+    # Truncate too long duration using config parameter
+    ori_data.loc[ori_data["duration"] > max_duration_minutes, "duration"] = max_duration_minutes
     
-    # Split dataset
+    # Split dataset using config parameters
     print("\nSplitting dataset...")
-    train_data, vali_data, test_data = split_dataset(ori_data)
+    train_data, vali_data, test_data = split_dataset(ori_data, split_params)
     print(f"Train: {len(train_data)}, Val: {len(vali_data)}, Test: {len(test_data)}")
     
     # Encode locations
@@ -171,15 +202,16 @@ def generate_transformer_data(config):
     print(f"Unique locations: {train_data['location_id'].nunique()}")
     
     # Generate sequences for each split
-    print(f"\nGenerating sequences (previous_day={previous_day})...")
+    print(f"\nGenerating sequences (previous_day={previous_day}, min_length={min_sequence_length})...")
     
     print("Processing train data...")
     train_records = apply_parallel(
         train_data.groupby("user_id"),
         get_valid_sequence_user,
-        n_jobs=-1,
+        n_jobs=n_jobs,
         previous_day=previous_day,
-        valid_ids=valid_ids
+        valid_ids=valid_ids,
+        min_sequence_length=min_sequence_length
     )
     train_records = [item for sublist in train_records for item in sublist]
     print(f"Train sequences: {len(train_records)}")
@@ -188,9 +220,10 @@ def generate_transformer_data(config):
     vali_records = apply_parallel(
         vali_data.groupby("user_id"),
         get_valid_sequence_user,
-        n_jobs=-1,
+        n_jobs=n_jobs,
         previous_day=previous_day,
-        valid_ids=valid_ids
+        valid_ids=valid_ids,
+        min_sequence_length=min_sequence_length
     )
     vali_records = [item for sublist in vali_records for item in sublist]
     print(f"Validation sequences: {len(vali_records)}")
@@ -199,9 +232,10 @@ def generate_transformer_data(config):
     test_records = apply_parallel(
         test_data.groupby("user_id"),
         get_valid_sequence_user,
-        n_jobs=-1,
+        n_jobs=n_jobs,
         previous_day=previous_day,
-        valid_ids=valid_ids
+        valid_ids=valid_ids,
+        min_sequence_length=min_sequence_length
     )
     test_records = [item for sublist in test_records for item in sublist]
     print(f"Test sequences: {len(test_records)}")

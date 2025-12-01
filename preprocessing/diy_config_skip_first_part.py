@@ -20,16 +20,14 @@ from utils import calculate_user_quality, enrich_time_info, split_dataset, get_v
 
 
 def get_dataset(paths_config, preprocess_config):
-    """Construct the raw staypoint with location id dataset from DIY data."""
+    """Construct the raw staypoint with location id dataset from DIY data - skipping first part."""
     
     # Extract all parameters from config
     output_dir = preprocess_config['dataset']['output_dir']
+    dataset_name = preprocess_config['dataset']['name']
     timezone = preprocess_config['dataset']['timezone']
     
     # Staypoint parameters
-    sp_params = preprocess_config['staypoints']
-    activity_params = preprocess_config['activity_flag']
-    quality_params = preprocess_config['user_quality']
     loc_params = preprocess_config['locations']
     merge_params = preprocess_config['staypoint_merging']
     seq_params = preprocess_config['sequence_generation']
@@ -37,94 +35,16 @@ def get_dataset(paths_config, preprocess_config):
     print(f"Using epsilon={loc_params['epsilon']} for location clustering")
     print(f"Using timezone={timezone}")
     
-    # Read raw CSV file
-    print("Reading DIY dataset...")
-    nrows = preprocess_config.get('sample_rows', None)
-    if nrows:
-        print(f"Sampling first {nrows} rows for testing...")
-        raw_df = pd.read_csv(os.path.join(paths_config["raw_diy"], "raw_diy_mobility_dataset.csv"), nrows=nrows)
-    else:
-        raw_df = pd.read_csv(os.path.join(paths_config["raw_diy"], "raw_diy_mobility_dataset.csv"))
+    # Read staypoints from preprocessed file
+    print("Reading preprocessed staypoints...")
+    sp = ti.read_staypoints_csv('/content/drive/MyDrive/next_location_prediction/data/03_processed/stayloc_full_trackintel_30min_100m/3_staypoints_fun_generate_trips.csv', columns={'geometry':'geom'}, index_col='id')
+    print(f"Loaded {len(sp)} staypoints")
     
-    print(f"Loaded {len(raw_df)} rows")
-    
-    # Convert to GeoDataFrame
-    print("Converting to GeoDataFrame...")
-    geometry = [Point(xy) for xy in zip(raw_df['longitude'], raw_df['latitude'])]
-    raw_df = gpd.GeoDataFrame(raw_df, geometry=geometry, crs='EPSG:4326')
-    
-    # Drop lat/lon columns and set index
-    raw_df = raw_df.drop(columns=['latitude', 'longitude'])
-    raw_df.index.name = 'id'
-    raw_df = raw_df.reset_index()
-    
-    # Parse timestamps and set timezone
-    print("Parsing timestamps...")
-    raw_df['tracked_at'] = pd.to_datetime(raw_df['tracked_at'])
-    # raw_df['tracked_at'] = raw_df['tracked_at'].dt.tz_convert(timezone)
-    # raw_df['tracked_at'] = raw_df['tracked_at'].dt.tz_localize('Asia/Jakarta') # the raw data already in Jakarta Timezone
-    
-    # Rename geometry column to geom AFTER setting timezone
-    raw_df = raw_df.rename(columns={'geometry': 'geom'})
-    raw_df = raw_df.set_geometry('geom')
-    
-    # Set index
-    raw_df = raw_df.set_index('id')
-    pfs = raw_df.as_positionfixes
-    
-    print(f"Loaded {len(pfs)} position fixes from {pfs['user_id'].nunique()} users")
-    
-    # Generate staypoints
-    print("Generating staypoints...")
-    pfs, sp = pfs.as_positionfixes.generate_staypoints(
-        method=sp_params.get('method', 'sliding'),
-        distance_metric=sp_params.get('distance_metric', 'haversine'),
-        gap_threshold=sp_params['gap_threshold'],
-        include_last=sp_params['include_last'],
-        print_progress=sp_params['print_progress'],
-        dist_threshold=sp_params['dist_threshold'],
-        time_threshold=sp_params['time_threshold'],
-        n_jobs=sp_params['n_jobs']
-    )
-    
-    # Create activity flag
-    sp = sp.as_staypoints.create_activity_flag(
-        method=activity_params['method'],
-        time_threshold=activity_params['time_threshold']
-    )
-
-    ## select valid user, generate the file if user quality file is not generated
-    quality_path = os.path.join(".", output_dir, "quality")
-    quality_file = os.path.join(quality_path, "diy_slide_filtered.csv")
-    
-    # Check if we should skip quality check (for testing)
-    if quality_params.get('skip_check', False):
-        print("Skipping user quality check (test mode)")
-        valid_user = sp["user_id"].unique()
-    elif Path(quality_file).is_file():
-        print("Loading pre-computed user quality...")
-        valid_user = pd.read_csv(quality_file)["user_id"].values
-    else:
-        if not os.path.exists(quality_path):
-            os.makedirs(quality_path)
-        # generate triplegs
-        print("Generating triplegs for user quality assessment...")
-        pfs, tpls = pfs.as_positionfixes.generate_triplegs(sp)
-        # the trackintel trip generation
-        sp, tpls, trips = generate_trips(sp, tpls, add_geometry=False)
-
-        # Build quality filter from config (similar to GC preprocessing)
-        quality_filter = {
-            "day_filter": quality_params['day_filter'],
-            "window_size": quality_params['window_size']
-        }
-        if quality_params.get('min_thres') is not None:
-            quality_filter['min_thres'] = quality_params['min_thres']
-        if quality_params.get('mean_thres') is not None:
-            quality_filter['mean_thres'] = quality_params['mean_thres']
-        
-        print(f"Quality filter: {quality_filter}")
-        valid_user = calculate_user_quality(sp.copy(), trips.copy(), quality_file, quality_filter)
+    # Read valid users
+    print("Reading valid users...")
+    valid_user_df = pd.read_csv('/content/drive/MyDrive/next_location_prediction/data/03_processed/stayloc_full_trackintel_30min_100m/10_filter_after_user_quality_DIY_slide_filteres.csv')
+    valid_user = valid_user_df["user_id"].values
+    print(f"Loaded {len(valid_user)} valid users")
 
     sp = sp.loc[sp["user_id"].isin(valid_user)]
     print(f"Valid users after quality filter: {len(valid_user)}")
@@ -158,10 +78,13 @@ def get_dataset(paths_config, preprocess_config):
     # save locations
     locs = locs[~locs.index.duplicated(keep="first")]
     filtered_locs = locs.loc[locs.index.isin(sp["location_id"].unique())]
-    filtered_locs.as_locations.to_csv(os.path.join(".", output_dir, f"locations_diy.csv"))
+    filtered_locs.as_locations.to_csv(os.path.join(".", output_dir, f"locations_{dataset_name}.csv"))
     print("Location size: ", sp["location_id"].unique().shape[0], filtered_locs.shape[0])
 
     sp = sp[["user_id", "started_at", "finished_at", "geom", "location_id"]]
+    # Reset index to ensure it's named 'id' for merge_staypoints
+    if sp.index.name != 'id':
+        sp.index.name = 'id'
     # merge staypoints
     print("Merging staypoints...")
     sp_merged = sp.as_staypoints.merge_staypoints(
@@ -179,16 +102,16 @@ def get_dataset(paths_config, preprocess_config):
     print("User size: ", sp_time["user_id"].unique().shape[0])
 
     # save intermediate results for analysis
-    sp_time.to_csv(f"./{output_dir}/sp_time_temp_diy.csv", index=False)
+    sp_time.to_csv(f"./{output_dir}/sp_time_temp_{dataset_name}.csv", index=False)
 
     # Get split parameters
     split_params = preprocess_config.get('dataset_split', {'train_ratio': 0.6, 'val_ratio': 0.2, 'test_ratio': 0.2})
     
     #
-    _filter_sp_history(sp_time, output_dir, seq_params, split_params)
+    _filter_sp_history(sp_time, output_dir, dataset_name, seq_params, split_params)
 
 
-def _filter_sp_history(sp, output_dir, seq_params, split_params):
+def _filter_sp_history(sp, output_dir, dataset_name, seq_params, split_params):
     """To unify the comparision between different previous days"""
     # classify the datasets, user dependent (configurable ratios)
     train_data, vali_data, test_data = split_dataset(sp, split_params)
@@ -197,7 +120,7 @@ def _filter_sp_history(sp, output_dir, seq_params, split_params):
     if len(train_data) == 0 or len(vali_data) == 0 or len(test_data) == 0:
         print(f"Warning: Insufficient data after initial split. Train: {len(train_data)}, Val: {len(vali_data)}, Test: {len(test_data)}")
         print("Skipping sequence filtering and saving all available data...")
-        sp.to_csv(f"./{output_dir}/dataSet_diy.csv", index=False)
+        sp.to_csv(f"./{output_dir}/dataSet_{dataset_name}.csv", index=False)
         print("Final user size: ", sp["user_id"].unique().shape[0])
         print("Dataset saved (test mode - no train/val/test split)")
         return
@@ -245,7 +168,7 @@ def _filter_sp_history(sp, output_dir, seq_params, split_params):
         print(f"Warning: Insufficient data after split. Train: {len(train_data)}, Val: {len(vali_data)}, Test: {len(test_data)}")
         print("Saving minimal dataset with available data...")
         # Just save what we have
-        filtered_sp.to_csv(f"./{output_dir}/dataSet_diy.csv", index=False)
+        filtered_sp.to_csv(f"./{output_dir}/dataSet_{dataset_name}.csv", index=False)
         print("Final user size: ", filtered_sp["user_id"].unique().shape[0])
         print("Dataset saved (without proper train/val/test split)")
         return
@@ -266,10 +189,10 @@ def _filter_sp_history(sp, output_dir, seq_params, split_params):
     filtered_sp["user_id"] = enc.fit_transform(filtered_sp["user_id"].values.reshape(-1, 1)) + 1
 
     # save the valid_ids and dataset
-    data_path = f"./{output_dir}/valid_ids_diy.pk"
+    data_path = f"./{output_dir}/valid_ids_{dataset_name}.pk"
     with open(data_path, "wb") as handle:
         pickle.dump(final_valid_id, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    filtered_sp.to_csv(f"./{output_dir}/dataSet_diy.csv", index=False)
+    filtered_sp.to_csv(f"./{output_dir}/dataSet_{dataset_name}.csv", index=False)
 
     print("Final user size: ", filtered_sp["user_id"].unique().shape[0])
 
@@ -279,7 +202,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         type=str,
-        default="configs/preprocessing/diy.yaml",
+        default="configs/preprocessing/diy_skip_first_part.yaml",
         help="Path to preprocessing configuration file"
     )
     parser.add_argument(

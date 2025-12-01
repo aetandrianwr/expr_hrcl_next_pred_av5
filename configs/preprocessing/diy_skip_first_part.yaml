@@ -1,10 +1,11 @@
-# DIY Dataset Preprocessing Configuration
+# DIY Dataset Preprocessing Configuration - Skip First Part
 # Dataset from Daerah Istimewa Yogyakarta, Indonesia
+# This config skips the initial processing and starts from filtered staypoints
 
 dataset:
-  name: "diy"
+  name: "diy_skip_first_part"
   raw_data_path: "data/diy/raw/raw_diy_mobility_dataset.csv"
-  output_dir: "data/diy"
+  output_dir: "data/diy_skip_first_part"
   timezone: "Asia/Jakarta"
 
 staypoints:
@@ -41,11 +42,15 @@ staypoint_merging:
 
 sequence_generation:
   previous_days: [7]  # days of history to consider
-  min_sequence_length: 3  # minimum history records required
+  min_sequence_length: 2  # minimum history records required (was 3 in comment, actual default was 2)
 
 dataset_split:
   train_ratio: 0.8
   val_ratio: 0.1
   test_ratio: 0.1
+
+# Transformer data generation parameters
+max_duration_days: 2  # truncate durations longer than this (in days)
+n_jobs: -1  # number of parallel jobs (-1 = use all CPUs)
 
 seed: 42
