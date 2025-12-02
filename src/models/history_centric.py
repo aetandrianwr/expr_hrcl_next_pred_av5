@@ -34,6 +34,7 @@ class HistoryCentricModel(nn.Module):
         loc_emb_dim = getattr(config, 'loc_emb_dim', 56)
         user_emb_dim = getattr(config, 'user_emb_dim', 12)
         nhead = getattr(config, 'nhead', 4)
+        num_layers = getattr(config, 'num_layers', 1)
         dim_feedforward = getattr(config, 'dim_feedforward', 160)
         dropout = getattr(config, 'dropout', 0.35)
         
@@ -59,25 +60,25 @@ class HistoryCentricModel(nn.Module):
         pe[:, 1::2] = torch.cos(position * div_term)
         self.register_buffer('pe', pe)
         
-        # Transformer
-        self.attn = nn.MultiheadAttention(self.d_model, nhead, dropout=dropout, batch_first=True)
-        self.ff = nn.Sequential(
-            nn.Linear(self.d_model, dim_feedforward),
-            nn.GELU(),
-            nn.Dropout(dropout),
-            nn.Linear(dim_feedforward, self.d_model)
+        # Transformer - support multiple layers
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=self.d_model,
+            nhead=nhead,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            activation='gelu',
+            batch_first=True,
+            norm_first=False
         )
-        self.norm1 = nn.LayerNorm(self.d_model)
-        self.norm2 = nn.LayerNorm(self.d_model)
-        self.dropout = nn.Dropout(dropout)
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+        self.num_layers = num_layers
         
-        # Prediction head
-        self.predictor = nn.Sequential(
-            nn.Linear(self.d_model, dim_feedforward),
-            nn.GELU(),
-            nn.Dropout(dropout * 0.85),  # Slightly less dropout in prediction head
-            nn.Linear(dim_feedforward, config.num_locations)
-        )
+        # Prediction head - use weight tying to save parameters
+        # Project hidden state to embedding space, then compute similarity with all location embeddings
+        self.output_proj = nn.Linear(self.d_model, loc_emb_dim)
+        # Will compute: similarity = output_proj(hidden) @ loc_emb.weight.T
+        # This saves ~15k * dim_feedforward parameters!
+        
         
         # History scoring parameters (learnable) - dataset-specific initialization
         dataset_name = getattr(config, 'dataset_name', None)
@@ -87,8 +88,15 @@ class HistoryCentricModel(nn.Module):
             self.freq_weight = nn.Parameter(torch.tensor(3.5))
             self.history_scale = nn.Parameter(torch.tensor(15.0))
             self.model_weight = nn.Parameter(torch.tensor(0.15))
+        elif dataset_name == 'diy':
+            # DIY dataset needs MORE learned model, LESS history
+            # History can only achieve ~35% Acc@1, so learned model must dominate
+            self.recency_decay = nn.Parameter(torch.tensor(0.70))
+            self.freq_weight = nn.Parameter(torch.tensor(1.8))
+            self.history_scale = nn.Parameter(torch.tensor(4.0))  # Reduce history influence
+            self.model_weight = nn.Parameter(torch.tensor(3.0))   # Greatly increase learned model
         else:
-            # Default parameters for other datasets (geolife, etc.)
+            # Default parameters for geolife and other datasets
             self.recency_decay = nn.Parameter(torch.tensor(0.62))
             self.freq_weight = nn.Parameter(torch.tensor(2.2))
             self.history_scale = nn.Parameter(torch.tensor(11.0))
@@ -185,23 +193,21 @@ class HistoryCentricModel(nn.Module):
         
         # Add positional encoding
         x = x + self.pe[:seq_len, :].unsqueeze(0)
-        x = self.dropout(x)
         
-        # Transformer layer
+        # Transformer encoding
         attn_mask = ~mask
-        attn_out, _ = self.attn(x, x, x, key_padding_mask=attn_mask)
-        x = self.norm1(x + self.dropout(attn_out))
-        
-        ff_out = self.ff(x)
-        x = self.norm2(x + self.dropout(ff_out))
+        x = self.transformer(x, src_key_padding_mask=attn_mask)
         
         # Get last valid position
         seq_lens = mask.sum(dim=1) - 1
         indices_gather = seq_lens.unsqueeze(1).unsqueeze(2).expand(batch_size, 1, self.d_model)
         last_hidden = torch.gather(x, 1, indices_gather).squeeze(1)
         
-        # Learned logits
-        learned_logits = self.predictor(last_hidden)
+        # Learned logits using weight-tied prediction
+        # Project to embedding space
+        output_emb = self.output_proj(last_hidden)  # (B, loc_emb_dim)
+        # Compute dot product with all location embeddings
+        learned_logits = torch.matmul(output_emb, self.loc_emb.weight.T)  # (B, num_locations)
         
         # === Ensemble: History + Learned ===
         # Normalize learned logits to similar scale as history scores

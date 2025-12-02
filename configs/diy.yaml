@@ -20,18 +20,19 @@ data:
 model:
   name: "HistoryCentricModel"
   
-  # Embedding dimensions (compact design for <500K params)
-  loc_emb_dim: 56      # Location embedding dimension
-  user_emb_dim: 12     # User embedding dimension
+  # Embedding dimensions - optimized for DIY within 500K budget
+  # Using weight-tied prediction to save parameters
+  loc_emb_dim: 24      # Location embedding dimension  
+  user_emb_dim: 10     # User embedding dimension
   weekday_emb_dim: 4   # Weekday embedding dimension (not used in history_centric)
   time_emb_dim: 8      # Time embedding dimension (not used in history_centric)
   
-  # Transformer parameters
-  d_model: 80          # Compact model dimension (loc:56 + user:12 + temporal:12 = 80)
-  nhead: 4             # Number of attention heads
-  num_layers: 1        # Number of transformer layers (history_centric uses 1)
-  dim_feedforward: 160 # Feedforward dimension (d_model * 2)
-  dropout: 0.35        # Dropout rate
+  # Transformer parameters - maximized within budget
+  d_model: 80          # Model dimension (loc:24 + user:10 + temporal:46 = 80)
+  nhead: 8             # Number of attention heads
+  num_layers: 2        # Number of transformer layers
+  dim_feedforward: 160 # Feedforward dimension
+  dropout: 0.25        # Dropout rate
 
 # Training configuration
 training:

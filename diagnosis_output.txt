@@ -1,0 +1,120 @@
+
+================================================================================
+HISTORY MODULE EFFECTIVENESS DIAGNOSIS
+================================================================================
+
+This script tests if the history module CAN work on each dataset.
+If targets are rarely in history or poorly ranked, history won't help.
+
+
+================================================================================
+ANALYZING: DIY
+================================================================================
+
+Dataset parameters:
+  num_locations: 15578
+  num_users: 803
+  max_seq_len: 100
+
+History module parameters (initial):
+  recency_decay: 0.6200
+  freq_weight: 2.2000
+  history_scale: 11.0000
+  model_weight: 0.2200
+
+Statistics from 12800 samples:
+
+Sequence characteristics:
+  Avg sequence length: 28.18
+  Avg unique locations: 8.73
+  Repeat rate: 69.03%
+
+Target coverage:
+  Targets in history: 79.02%
+
+History score analysis:
+  Target history score - Mean: 13.8744, Std: 10.0651
+  Max history score    - Mean: 24.4642, Std: 1.0166
+  Score ratio (target/max): 56.71%
+
+Ranking by history:
+  Avg rank of target: 4.1
+  Targets in top-1: 34.59%
+  Targets in top-5: 77.60%
+  Targets in top-10: 90.84%
+
+⚠ CRITICAL: History-only Acc@1 upper bound: 34.59%
+   This is the MAXIMUM the history module alone can achieve.
+
+For targets that ARE in history (10115 samples):
+  Avg target score: 17.5574
+  Avg max score: 24.4837
+  Ratio: 71.76%
+
+================================================================================
+
+================================================================================
+ANALYZING: GEOLIFE
+================================================================================
+
+Dataset parameters:
+  num_locations: 1177
+  num_users: 46
+  max_seq_len: 46
+
+History module parameters (initial):
+  recency_decay: 0.6200
+  freq_weight: 2.2000
+  history_scale: 11.0000
+  model_weight: 0.2200
+
+Statistics from 3502 samples:
+
+Sequence characteristics:
+  Avg sequence length: 18.37
+  Avg unique locations: 5.41
+  Repeat rate: 70.53%
+
+Target coverage:
+  Targets in history: 83.81%
+
+History score analysis:
+  Target history score - Mean: 16.1142, Std: 9.8769
+  Max history score    - Mean: 24.6904, Std: 1.3825
+  Score ratio (target/max): 65.22%
+
+Ranking by history:
+  Avg rank of target: 2.6
+  Targets in top-1: 42.12%
+  Targets in top-5: 88.89%
+  Targets in top-10: 97.34%
+
+⚠ CRITICAL: History-only Acc@1 upper bound: 42.12%
+   This is the MAXIMUM the history module alone can achieve.
+
+For targets that ARE in history (2935 samples):
+  Avg target score: 19.2272
+  Avg max score: 24.7042
+  Ratio: 77.82%
+
+================================================================================
+COMPARISON
+================================================================================
+
+DIY vs Geolife:
+  Targets in history: DIY=79.02%, Geo=83.81%
+  History-only Acc@1: DIY=34.59%, Geo=42.12%
+  Avg seq length: DIY=28.2, Geo=18.4
+  Avg unique locs: DIY=8.7, Geo=5.4
+
+================================================================================
+DIAGNOSIS SUMMARY
+================================================================================
+
+⚠ PROBLEM IDENTIFIED:
+  DIY history-only Acc@1 is only 34.59%
+  This means the history module CANNOT achieve >40% alone!
+  The issue is NOT in the implementation, but in the APPROACH.
+
+  SOLUTION: The model needs to rely MORE on learned patterns,
+            not history. Increase model_weight parameter significantly.
