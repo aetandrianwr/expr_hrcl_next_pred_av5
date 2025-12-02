@@ -20,27 +20,27 @@ data:
 model:
   name: "HistoryCentricModel"
   
-  # Embedding dimensions - MINIMAL to fit budget with full prediction head
-  loc_emb_dim: 16      # Location embedding dimension (minimized)
-  user_emb_dim: 8      # User embedding dimension
+  # Embedding dimensions - optimized for 3M parameter budget
+  loc_emb_dim: 48      # Location embedding dimension
+  user_emb_dim: 16     # User embedding dimension
   weekday_emb_dim: 4   # Weekday embedding dimension (not used in history_centric)
   time_emb_dim: 8      # Time embedding dimension (not used in history_centric)
   
-  # Transformer parameters - optimize for learned patterns
-  d_model: 64          # Model dimension (loc:16 + user:8 + temporal:40 = 64)
+  # Transformer parameters - strong model with 4 layers
+  d_model: 112         # Model dimension (loc:48 + user:16 + temporal:48 = 112)
   nhead: 8             # Number of attention heads
-  num_layers: 3        # 3 transformer layers for more expressiveness
-  dim_feedforward: 128 # Feedforward dimension
-  dropout: 0.2         # Lower dropout for DIY
+  num_layers: 4        # 4 transformer layers (matching baseline)
+  dim_feedforward: 224 # Feedforward dimension (2x d_model)
+  dropout: 0.2         # Dropout rate
 
 # Training configuration
 training:
   batch_size: 256
   num_epochs: 120
-  learning_rate: 0.001     # Match baseline (was 0.0025)
-  weight_decay: 0.000001   # Match baseline (was 0.00008)
+  learning_rate: 0.001     # Baseline learning rate
+  weight_decay: 0.000001   # Baseline weight decay
   grad_clip: 1.0
-  label_smoothing: 0.02
+  label_smoothing: 0.05    # Increased from 0.02 for better generalization
   
   # Optimizer
   optimizer: "adamw"
