@@ -20,26 +20,25 @@ data:
 model:
   name: "HistoryCentricModel"
   
-  # Embedding dimensions - optimized for DIY within 500K budget
-  # Using weight-tied prediction to save parameters
-  loc_emb_dim: 24      # Location embedding dimension  
-  user_emb_dim: 10     # User embedding dimension
+  # Embedding dimensions - MINIMAL to fit budget with full prediction head
+  loc_emb_dim: 16      # Location embedding dimension (minimized)
+  user_emb_dim: 8      # User embedding dimension
   weekday_emb_dim: 4   # Weekday embedding dimension (not used in history_centric)
   time_emb_dim: 8      # Time embedding dimension (not used in history_centric)
   
-  # Transformer parameters - maximized within budget
-  d_model: 80          # Model dimension (loc:24 + user:10 + temporal:46 = 80)
+  # Transformer parameters - optimize for learned patterns
+  d_model: 64          # Model dimension (loc:16 + user:8 + temporal:40 = 64)
   nhead: 8             # Number of attention heads
-  num_layers: 2        # Number of transformer layers
-  dim_feedforward: 160 # Feedforward dimension
-  dropout: 0.25        # Dropout rate
+  num_layers: 3        # 3 transformer layers for more expressiveness
+  dim_feedforward: 128 # Feedforward dimension
+  dropout: 0.2         # Lower dropout for DIY
 
 # Training configuration
 training:
   batch_size: 256
   num_epochs: 120
-  learning_rate: 0.0025
-  weight_decay: 0.00008
+  learning_rate: 0.001     # Match baseline (was 0.0025)
+  weight_decay: 0.000001   # Match baseline (was 0.00008)
   grad_clip: 1.0
   label_smoothing: 0.02
   

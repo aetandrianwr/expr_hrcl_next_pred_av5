@@ -73,11 +73,10 @@ class HistoryCentricModel(nn.Module):
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
         self.num_layers = num_layers
         
-        # Prediction head - use weight tying to save parameters
-        # Project hidden state to embedding space, then compute similarity with all location embeddings
-        self.output_proj = nn.Linear(self.d_model, loc_emb_dim)
-        # Will compute: similarity = output_proj(hidden) @ loc_emb.weight.T
-        # This saves ~15k * dim_feedforward parameters!
+        # Prediction head - lightweight but effective
+        # Use a single linear layer to save parameters
+        self.output_norm = nn.LayerNorm(self.d_model)
+        self.predictor = nn.Linear(self.d_model, config.num_locations)
         
         
         # History scoring parameters (learnable) - dataset-specific initialization
@@ -203,11 +202,9 @@ class HistoryCentricModel(nn.Module):
         indices_gather = seq_lens.unsqueeze(1).unsqueeze(2).expand(batch_size, 1, self.d_model)
         last_hidden = torch.gather(x, 1, indices_gather).squeeze(1)
         
-        # Learned logits using weight-tied prediction
-        # Project to embedding space
-        output_emb = self.output_proj(last_hidden)  # (B, loc_emb_dim)
-        # Compute dot product with all location embeddings
-        learned_logits = torch.matmul(output_emb, self.loc_emb.weight.T)  # (B, num_locations)
+        # Learned logits
+        last_hidden = self.output_norm(last_hidden)
+        learned_logits = self.predictor(last_hidden)
         
         # === Ensemble: History + Learned ===
         # Normalize learned logits to similar scale as history scores
