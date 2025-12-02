@@ -20,27 +20,27 @@ data:
 model:
   name: "HistoryCentricModel"
   
-  # Embedding dimensions (optimized for performance)
-  loc_emb_dim: 64      # Location embedding dimension (increased for better representation)
-  user_emb_dim: 16     # User embedding dimension (increased)
+  # Embedding dimensions (compact design for <500K params)
+  loc_emb_dim: 56      # Location embedding dimension
+  user_emb_dim: 12     # User embedding dimension
   weekday_emb_dim: 4   # Weekday embedding dimension (not used in history_centric)
   time_emb_dim: 8      # Time embedding dimension (not used in history_centric)
   
   # Transformer parameters
-  d_model: 96          # Model dimension (loc:64 + user:16 + temporal:16 = 96)
+  d_model: 80          # Compact model dimension (loc:56 + user:12 + temporal:12 = 80)
   nhead: 4             # Number of attention heads
   num_layers: 1        # Number of transformer layers (history_centric uses 1)
-  dim_feedforward: 192 # Feedforward dimension (d_model * 2)
-  dropout: 0.25        # Dropout rate (reduced for better learning)
+  dim_feedforward: 160 # Feedforward dimension (d_model * 2)
+  dropout: 0.35        # Dropout rate
 
 # Training configuration
 training:
-  batch_size: 512
+  batch_size: 256
   num_epochs: 120
-  learning_rate: 0.004
-  weight_decay: 0.0001
+  learning_rate: 0.0025
+  weight_decay: 0.00008
   grad_clip: 1.0
-  label_smoothing: 0.01
+  label_smoothing: 0.02
   
   # Optimizer
   optimizer: "adamw"
@@ -58,7 +58,7 @@ training:
   
   # Early stopping
   early_stopping:
-    patience: 20
+    patience: 10
     metric: "val_loss"
     mode: "min"
 

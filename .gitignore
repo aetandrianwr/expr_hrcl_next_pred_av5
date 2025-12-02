@@ -42,4 +42,9 @@ data/diy*/
 
 runs/*/checkpoints/
 
-/content/expr_hrcl_next_pred_av5/baseline/location-prediction-baseline-ori/data/Data/
+baseline/location-prediction-baseline-ori/data/Data/
+
+baseline/location-prediction-baseline-ori-new/data/
+
+data/
+

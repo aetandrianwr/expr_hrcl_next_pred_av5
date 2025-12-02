@@ -58,7 +58,7 @@ training:
   
   # Early stopping
   early_stopping:
-    patience: 20
+    patience: 10
     metric: "val_loss"
     mode: "min"
 

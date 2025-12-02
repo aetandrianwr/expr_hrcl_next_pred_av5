@@ -1,0 +1,99 @@
+# DIY Skip First Part Dataset Default Configuration
+# Production-level configuration for next-location prediction
+
+# Experiment metadata
+experiment:
+  name: "diy_baseline"
+  description: "Baseline transformer model for DIY skip first part dataset"
+  dataset: "diy"
+  version: "1.0"
+
+# Dataset configuration
+data:
+  dataset_name: "diy"
+  data_dir: "data/diy"
+  train_file: "diy_transformer_7_train.pk"
+  val_file: "diy_transformer_7_validation.pk"
+  test_file: "diy_transformer_7_test.pk"
+
+# Model architecture
+model:
+  name: "HistoryCentricModel"
+  
+  # Embedding dimensions (compact design for <500K params)
+  loc_emb_dim: 56      # Location embedding dimension
+  user_emb_dim: 12     # User embedding dimension
+  weekday_emb_dim: 4   # Weekday embedding dimension (not used in history_centric)
+  time_emb_dim: 8      # Time embedding dimension (not used in history_centric)
+  
+  # Transformer parameters
+  d_model: 80          # Compact model dimension (loc:56 + user:12 + temporal:12 = 80)
+  nhead: 4             # Number of attention heads
+  num_layers: 1        # Number of transformer layers (history_centric uses 1)
+  dim_feedforward: 160 # Feedforward dimension (d_model * 2)
+  dropout: 0.35        # Dropout rate
+
+# Training configuration
+training:
+  batch_size: 256
+  num_epochs: 120
+  learning_rate: 0.0025
+  weight_decay: 0.00008
+  grad_clip: 1.0
+  label_smoothing: 0.02
+  
+  # Optimizer
+  optimizer: "adamw"
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  
+  # Learning rate scheduler
+  scheduler:
+    type: "reduce_on_plateau"  # or "cosine_annealing"
+    patience: 10
+    factor: 0.6
+    min_lr: 5.0e-7
+    warmup_epochs: 3
+    T_max: 50  # for cosine annealing
+  
+  # Early stopping
+  early_stopping:
+    patience: 10
+    metric: "val_loss"
+    mode: "min"
+
+# Evaluation configuration
+evaluation:
+  metrics: ["acc@1", "acc@3", "acc@5", "acc@10", "mrr", "ndcg", "f1"]
+  save_predictions: false
+  
+# System configuration
+system:
+  device: "auto"  # auto, cuda, cpu
+  num_workers: 2
+  pin_memory: true
+  seed: 42
+  deterministic: true
+  
+# Logging and checkpointing
+logging:
+  log_interval: 50
+  verbose: true
+  wandb:
+    enabled: false
+    project: "next-location-prediction"
+    entity: null
+  
+checkpoint:
+  save_best: true
+  save_last: true
+  monitor: "val_loss"
+  mode: "min"
+
+# Output paths (relative to project root)
+paths:
+  runs_dir: "runs"
+  results_dir: "results"
+  checkpoints_dir: "results/checkpoints"
+  logs_dir: "results/logs"
+  predictions_dir: "results/predictions"
