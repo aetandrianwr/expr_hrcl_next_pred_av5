@@ -161,7 +161,10 @@ class HistoryCentricModel(nn.Module):
     def forward(self, loc_seq, user_seq, weekday_seq, start_min_seq, dur_seq, diff_seq, mask):
         batch_size, seq_len = loc_seq.shape
         
-        # === Learned model (pure transformer, no history) ===
+        # === Compute history-based scores ===
+        history_scores = self.compute_history_scores(loc_seq, mask)
+        
+        # === Learned model ===
         # Feature extraction
         loc_emb = self.loc_emb(loc_seq)
         user_emb = self.user_emb(user_seq)
@@ -203,9 +206,12 @@ class HistoryCentricModel(nn.Module):
         last_hidden = self.output_norm(last_hidden)
         learned_logits = self.predictor(last_hidden)
         
-        # Return learned logits directly (history module disabled for DIY)
-        # History can only achieve ~34% Acc@1 on DIY, so we rely purely on transformer
-        return learned_logits
+        # === Ensemble: History + Learned (logit-level combination) ===
+        # For DIY: Give MORE weight to learned model (80%) vs history (20%)
+        alpha = 0.2  # Weight for history
+        combined_logits = alpha * history_scores + (1 - alpha) * learned_logits
+        
+        return combined_logits
     
     def count_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
